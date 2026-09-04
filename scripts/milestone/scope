@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# Derive the write scope of one worker session and print it as JSON; with
+# --write also store it as <WORKTREE>/.claude/scope.json, which enables
+# scripts/hooks/guard-scope.sh in that worktree. Called by spawn; status prints
+# the stored file. Deterministic: same worktree state → same scope.
+#
+# Usage: scripts/milestone/scope <MILESTONE-ID> <ROLE> [--session N] [--write]
+#        ROLE: plan|execute|finish|probe|audit
+#
+# Scope = common allow (session-end writes: STATUS row, journal, SDD ledger and
+# handoff, the plan's ## Status) + role allow, minus the always-denied paths
+# (scope file, settings, hooks, roadmap, .git).
+#   plan     docs/** (spec, impl plan, five-question plan, docs-only roadmap tasks)
+#            plus */test/contracts/** (the consumer-side contract tests of
+#            ## Exit checks; every other role is denied them)
+#   audit    docs/sdd/<M>/handoff.md only (owner-invoked grading session)
+#   execute  docs/adr/**, pnpm-lock.yaml, and the component(s) of the next ≤2
+#            unfinished tasks of docs/plans/<SLUG>.impl.md: each path under a
+#            task's **Files:** block (Create/Modify/Test/Delete/Move/Rename) opens
+#            its owning component dir (packages/<n>/**, apps/<n>/**,
+#            fixtures/**, .github/**) or, for docs, rule files and root files,
+#            exactly that path. The spec and impl plan are NOT writable.
+#   finish   common only (verify, rewrite status, open the PR; never fix code).
+#   probe    docs/spike-results.md, docs/adr/**, pnpm-lock.yaml, and the paths of
+#            a **Files:** block in docs/plans/<SLUG>.md once that plan exists
+#            (the first probe session is docs-only and hands off CONTINUE).
+# Warnings (a task without a Files block, no impl plan yet, no unfinished task)
+# go into .warnings and are printed by spawn as WARN= lines for the driver.
+set -euo pipefail
+[ $# -ge 2 ] || { echo "usage: scope <MILESTONE-ID> <ROLE> [--session N] [--write]" >&2; exit 2; }
+m=$1; role=$2; shift 2
+session=""; write=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --session) session=$2; shift 2 ;;
+    --write) write=1; shift ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+case "$role" in plan|execute|finish|probe|audit) ;; *) echo "unknown role: $role (plan|execute|finish|probe|audit)" >&2; exit 2 ;; esac
+
+root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+wt="$(dirname "$root")/$(basename "$root")-$m"
+[ -d "$wt" ] || { echo "no worktree at $wt; run scripts/milestone/claim $m first" >&2; exit 3; }
+cd "$wt"
+
+row=$(grep -E "^\| \*{0,2}${m}[ *|]" docs/STATUS.md || true)
+slug=$(printf '%s' "$row" | sed -n 's|.*docs/plans/\([A-Za-z0-9._-]*\)\.md.*|\1|p')
+[ -n "$slug" ] || slug=$m
+base=$(git rev-parse HEAD)
+
+warnings=()
+allow=(
+  "docs/STATUS.md"
+  "docs/journal/**"
+  "docs/sdd/$m/**"
+  "docs/sdd/$slug/**"
+  "docs/plans/$slug.md"
+)
+deny=(
+  ".claude/scope.json"
+  ".claude/settings.json"
+  ".claude/settings.local.json"
+  "scripts/hooks/**"
+  "docs/05-roadmap.md"
+  "docs/sdd/*/exit-checks.lock"
+  ".git/**"
+)
+tasks_json='[]'
+
+# Widen one plan path to the unit the boundary rules own (CLAUDE.md §2: the
+# component is the boundary; its rule file's `paths:` is the same granularity).
+component_glob() {
+  local p=$1
+  case "$p" in
+    packages/*/*) printf 'packages/%s/**\n' "$(printf '%s' "$p" | cut -d/ -f2)" ;;
+    apps/*/*)     printf 'apps/%s/**\n'     "$(printf '%s' "$p" | cut -d/ -f2)" ;;
+    fixtures/*)   printf 'fixtures/**\n' ;;
+    .github/*)    printf '.github/**\n' ;;
+    */)           printf '%s**\n' "$p" ;;   # a directory listed explicitly
+    *)            printf '%s\n' "$p" ;;     # docs, rule files, root files: exact
+  esac
+}
+
+# Print the backticked paths of the **Files:** block(s) in the text on stdin,
+# keeping only write labels and stripping `:12-34` line ranges.
+files_of() {
+  awk '
+    /^```/ { fence = !fence; next }
+    fence { next }
+    /^\*\*Files:?\*\*/ { inblock = 1; next }
+    inblock && /^[[:space:]]*$/ { inblock = 0; next }
+    inblock && /^[[:space:]]*[-*][[:space:]]+(Create|Modify|Test|Delete|Move|Rename|Add|Edit|Write)[^`]*`/ {
+      line = $0
+      while (match(line, /`[^`]+`/)) {
+        p = substr(line, RSTART + 1, RLENGTH - 2)
+        sub(/:[0-9]+(-[0-9]+)?$/, "", p)
+        print p
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }'
+}
+
+# Extract task N's text (same fence-aware heading rule as scripts/sdd/task-brief).
+task_text() {
+  awk -v n="$2" '
+    /^```/ { infence = !infence }
+    !infence && /^#+[ \t]+Task[ \t]+[0-9]+/ { intask = ($0 ~ ("^#+[ \t]+Task[ \t]+" n "([^0-9]|$)")) }
+    intask { print }
+  ' "$1"
+}
+
+add_from_files() { # $1 = newline-separated paths (runs in this shell: no pipe)
+  local p
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    allow+=("$(component_glob "$p")")
+  done <<< "$1"
+}
+
+# Contract tests (## Exit checks, I rows) are written by plan and frozen for everyone else.
+contracts=("packages/*/test/contracts/**" "apps/*/test/contracts/**")
+case "$role" in
+  plan)
+    allow+=("docs/**" "${contracts[@]}") ;;
+  audit)
+    allow=("docs/sdd/$m/handoff.md") ;;
+  finish)
+    deny+=("${contracts[@]}") ;;
+  execute)
+    deny+=("${contracts[@]}")
+    allow+=("docs/adr/**" "pnpm-lock.yaml")
+    impl="docs/plans/$slug.impl.md"
+    if [ ! -f "$impl" ]; then
+      warnings+=("no implementation plan at $impl; execute has no code scope (plan role first)")
+    else
+      ledger=""
+      for l in "docs/sdd/$slug/progress.md" "docs/sdd/$m/progress.md"; do [ -f "$l" ] && { ledger=$l; break; }; done
+      done_tasks=""
+      [ -n "$ledger" ] && done_tasks=$(grep -oE 'Task [0-9]+: complete' "$ledger" | grep -oE '[0-9]+' | sort -un | tr '\n' ' ')
+      all_tasks=$(awk '/^```/ { f = !f } !f && /^#+[ \t]+Task[ \t]+[0-9]+/ { match($0, /Task[ \t]+[0-9]+/); t = substr($0, RSTART, RLENGTH); sub(/Task[ \t]+/, "", t); print t }' "$impl" | sort -un)
+      picked=()
+      for t in $all_tasks; do
+        case " $done_tasks " in *" $t "*) continue ;; esac
+        picked+=("$t"); [ ${#picked[@]} -eq 2 ] && break
+      done
+      [ ${#picked[@]} -gt 0 ] || warnings+=("no unfinished task in $impl; expected outcome DONE without code changes")
+      for t in "${picked[@]:-}"; do
+        [ -n "$t" ] || continue
+        text=$(task_text "$impl" "$t")
+        title=$(printf '%s\n' "$text" | head -1 | sed -E 's/^#+[ \t]+Task[ \t]+[0-9]+:?[ \t]*//')
+        files=$(printf '%s\n' "$text" | files_of)
+        [ -n "$files" ] || warnings+=("task $t ($title) lists no Create/Modify/Test paths under **Files:**; it can only touch docs/adr and the common paths")
+        add_from_files "$files"
+        tasks_json=$(printf '%s\n' "$files" | jq -R . | jq -s --argjson acc "$tasks_json" --argjson n "$t" --arg title "$title" \
+          '$acc + [{n: $n, title: $title, files: (map(select(length > 0)))}]')
+      done
+    fi ;;
+  probe)
+    deny+=("${contracts[@]}")
+    allow+=("docs/spike-results.md" "docs/adr/**" "pnpm-lock.yaml")
+    plan="docs/plans/$slug.md"
+    if [ -f "$plan" ]; then
+      files=$(files_of < "$plan")
+      [ -n "$files" ] || warnings+=("$plan has no **Files:** block; the probe stays docs-only")
+      add_from_files "$files"
+    else
+      warnings+=("no $plan yet; first probe session is docs-only: write the plan with a **Files:** block, hand off CONTINUE")
+    fi ;;
+esac
+
+json=$(jq -n \
+  --arg m "$m" --arg role "$role" --arg session "${session:-}" --arg base "$base" --arg slug "$slug" \
+  --argjson tasks "$tasks_json" \
+  --argjson allow "$(printf '%s\n' "${allow[@]}" | awk 'NF && !seen[$0]++' | jq -R . | jq -s .)" \
+  --argjson deny "$(printf '%s\n' "${deny[@]}" | jq -R . | jq -s .)" \
+  --argjson warnings "$( (printf '%s\n' "${warnings[@]:-}") | awk 'NF' | jq -R . | jq -s .)" \
+  '{milestone: $m, role: $role, session: ($session | if . == "" then null else tonumber end), base: $base, slug: $slug,
+    tasks: $tasks, allow: $allow, deny: $deny, warnings: $warnings}')
+
+if [ "$write" = 1 ]; then
+  mkdir -p .claude
+  printf '%s\n' "$json" > .claude/scope.json
+fi
+printf '%s\n' "$json"

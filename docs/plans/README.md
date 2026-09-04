@@ -4,7 +4,7 @@ Three files per milestone, all named after the roadmap id (`0A-scaffold`, `1A-ve
 
 | File | Written by | Contents |
 |---|---|---|
-| `<milestone>.md` | session, in the five-question form below | Architecture plan: placement, boundary check, interfaces, principles, tests. Plus `## Status` (see below) and links to the two files under it. |
+| `<milestone>.md` | session, in the five-question form below | Architecture plan: placement, boundary check, interfaces, principles, tests. Plus `## Exit checks` (frozen at plan time, see below), `## Status` (see below) and links to the two files under it. |
 | `<milestone>.spec.md` | superpowers `obra-brainstorming` | Validated design. Must answer the five questions. |
 | `<milestone>.impl.md` | superpowers `obra-writing-plans` | Bite-sized tasks with code. Header "Global Constraints" names the owning `.claude/rules/<component>.md`. Run the five-question checklist on it before executing; a boundary error in the plan multiplies into every task. |
 
@@ -36,6 +36,26 @@ Owned by the session on this milestone; rewritten, not appended.
 - Blockers
 
 `docs/STATUS.md` holds only the one-sentence summary row that points here.
+
+## `## Exit checks` in `<milestone>.md`
+
+The roadmap row's **Exit** cell and **Interfaces fixed here** cell, turned into commands at plan time, before any code exists. `scripts/milestone/exit-check <M>` runs them after every session and joins them with the worker's `exit-progress` on the Criterion text; the driver relays disagreement to the owner. Written once by the plan session, shown to the owner, then frozen (`exit-check --freeze`): a later edit to the table or to a contract test it names is reported as `TAMPERED` and means re-planning (roadmap §2.1, §7), never a quiet fix.
+
+```markdown
+## Exit checks
+
+| # | Criterion (verbatim) | Kind | Check |
+|---|---|---|---|
+| E1 | <one Exit criterion, verbatim from the roadmap row> | clean-clone | `pnpm install --frozen-lockfile && pnpm build && pnpm test` |
+| E2 | <next criterion> | mechanical | `pnpm vitest run <path>` |
+| E3 | <a criterion only the owner can verify> | owner | - |
+| I1 | <one item of Interfaces fixed here, verbatim> | consumer:<M>[,<M>] | `pnpm vitest run <owner package>/test/contracts/<consumer>-<interface>.contract.test.ts` |
+```
+
+- `E` rows: one per criterion in the Exit cell (split at `;`). `I` rows: one per item in Interfaces fixed here; `consumer:` names only milestones that cell says consume it.
+- Kinds: `mechanical` runs in the worktree; `clean-clone` runs in a fresh `git clone` of the branch (`--fast` runs it in the worktree); `consumer:<M>` is a contract test written from the consumer's side and frozen with the table; `owner` has no command.
+- A contract test asserts what the consumer's roadmap row needs from the shape, through the owning package's public export (`package.json` `exports`, no deep imports). It fails until execute makes it pass; execute never edits it.
+- Commands start with `pnpm`, `npx`, `node`, `turbo`, `tsc`, `vitest`, `playwright`, `bash`, `sh`, `test` or `scripts/`; anything else is `REFUSED`. No `|` inside a cell. The Criterion cell is the join key: `exit-progress` lines quote it verbatim.
 
 ## Superpowers
 

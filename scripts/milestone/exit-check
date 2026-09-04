@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# Hold the milestone's intent independently of the worker (driving-a-milestone).
+#
+# The plan role freezes the roadmap row's Exit criteria and "Interfaces fixed
+# here" into a `## Exit checks` table in docs/plans/<SLUG>.md: one row per
+# criterion, each with a command (or `owner`). Interface rows name a contract
+# test written from the consumer's side. This script runs those commands, reads
+# the worker's `exit-progress` from docs/sdd/<M>/handoff.md, joins the two on
+# the criterion text, and prints AGREE / DISAGREE per row. It also detects
+# edits to the frozen table and to the contract tests it names (lock file).
+#
+# The driver acts only on the printed words; it never grades anything itself.
+#
+# Usage: scripts/milestone/exit-check <MILESTONE-ID> [--fast] [--no-run] [--freeze] [--refreeze]
+#   (default)   run every row; `clean-clone` rows run in a fresh clone under $TMPDIR
+#   --fast      `clean-clone` rows run in the worktree instead (status uses this)
+#   --no-run    print table, lock state and the join only; run nothing
+#   --freeze    after plan DONE and owner approval: write docs/sdd/<M>/exit-checks.lock
+#               (table hash, hash of every file a consumer row names); refuses if a lock exists
+#   --refreeze  same, replacing an existing lock (owner-approved re-plan only)
+# Env: EXIT_CHECK_TIMEOUT (seconds per row, default 900).
+# Exit codes: 0 report printed (whatever it says); 2 usage; 3 no worktree;
+#   6 lock exists (--freeze); 7 a row names no existing file (--freeze).
+set -euo pipefail
+[ $# -ge 1 ] || { echo "usage: exit-check <MILESTONE-ID> [--fast] [--no-run] [--freeze] [--refreeze]" >&2; exit 2; }
+m=$1; shift
+fast=0; norun=0; freeze=0; refreeze=0
+for a in "$@"; do
+  case "$a" in
+    --fast) fast=1 ;; --no-run) norun=1 ;; --freeze) freeze=1 ;; --refreeze) freeze=1; refreeze=1 ;;
+    *) echo "unknown flag $a" >&2; exit 2 ;;
+  esac
+done
+timeout_s=${EXIT_CHECK_TIMEOUT:-900}
+
+root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+wt="$(dirname "$root")/$(basename "$root")-$m"
+[ -d "$wt" ] || { echo "no worktree at $wt" >&2; exit 3; }
+cd "$wt"
+sdd="docs/sdd/$m"; lock="$sdd/exit-checks.lock"; handoff="$sdd/handoff.md"
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/exit-check.XXXXXX"); trap 'rm -rf "$tmp"' EXIT
+
+sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{print $1}'; }
+# Join key: lower case, no backticks/bold, single spaces, no trailing period.
+norm() { printf '%s' "$1" | tr 'A-Z' 'a-z' | sed -E 's/[`*]//g; s/[[:space:]]+/ /g; s/^ //; s/ $//; s/\.$//'; }
+
+# ---- plan file and table -----------------------------------------------------
+plan=""
+for f in docs/plans/"$m"*.md; do
+  [ -f "$f" ] || continue
+  case "$f" in *.spec.md|*.impl.md) ;; *) plan=$f; break ;; esac
+done
+head_sha=$(git rev-parse --short HEAD)
+dirty=$(git status --porcelain --untracked-files=no | wc -l | tr -d ' ')
+printf '===== exit-check %s  (%s @ %s, %s uncommitted; mode: %s)\n' "$m" "$wt" "$head_sha" "$dirty" \
+  "$([ $freeze = 1 ] && echo freeze || { [ $norun = 1 ] && echo no-run || { [ $fast = 1 ] && echo fast || echo full; }; })"
+[ -n "$plan" ] || { echo "exit-checks: none (no docs/plans/$m*.md yet)"; exit 0; }
+
+# Section text (to the next ## heading), then rows: | E1 | criterion | kind | check |
+awk '/^## Exit checks/{p=1; next} /^## /{p=0} p' "$plan" > "$tmp/section"
+if ! grep -q '^| *[EI][0-9]' "$tmp/section"; then
+  echo "exit-checks: none ($plan has no ## Exit checks table)"; exit 0
+fi
+# TSV: id \t criterion \t kind \t check (check cell stripped of surrounding backticks)
+awk -F'|' '
+  /^\| *[EI][0-9]+ *\|/ {
+    for (i = 2; i <= 5; i++) { gsub(/^[ \t]+|[ \t]+$/, "", $i) }
+    c = $5; sub(/^`/, "", c); sub(/`$/, "", c)
+    printf "%s\t%s\t%s\t%s\n", $2, $3, $4, c
+  }' "$tmp/section" > "$tmp/rows"
+table_hash=$(sha "$tmp/rows")
+
+# Files a row names: every whitespace token of a check that is a regular file in the tree.
+# Only consumer:* rows lock their files (the contract tests); mechanical rows lock nothing.
+row_files() {  # $1 = check command → prints existing file tokens, one per line
+  for tok in $1; do
+    tok=${tok#\"}; tok=${tok%\"}; tok=${tok#\'}; tok=${tok%\'}
+    [ -f "$tok" ] && printf '%s\n' "$tok"
+  done
+  return 0
+}
+
+echo "table: $plan ## Exit checks ($(wc -l < "$tmp/rows" | tr -d ' ') rows)"
+
+# ---- freeze --------------------------------------------------------------------
+if [ $freeze = 1 ]; then
+  if [ -f "$lock" ] && [ $refreeze = 0 ]; then
+    echo "lock: EXISTS ($lock). A frozen table changes only by an owner-approved re-plan: --refreeze." >&2; exit 6
+  fi
+  bad=0; : > "$tmp/lock"
+  printf 'frozen-at %s\n' "$(git rev-parse HEAD)" >> "$tmp/lock"
+  printf 'table %s\n' "$table_hash" >> "$tmp/lock"
+  while IFS=$'\t' read -r id crit kind check; do
+    files=$(row_files "$check")
+    case "$kind" in
+      consumer:*) [ -n "$files" ] || { echo "row $id ($kind): its check names no file in the tree; the plan must write the contract test before freezing" >&2; bad=1; } ;;
+      owner) [ -z "$check" ] || [ "$check" = "-" ] || echo "row $id: kind owner but has a check; the script will not run it" >&2 ;;
+    esac
+    case "$kind" in consumer:*) for f in $files; do printf 'file %s %s\n' "$f" "$(sha "$f")" >> "$tmp/lock"; done ;; esac
+  done < "$tmp/rows"
+  [ $bad = 0 ] || exit 7
+  mkdir -p "$sdd"; cp "$tmp/lock" "$lock"
+  echo "lock: FROZEN at $(git rev-parse --short HEAD) → $lock"
+  sed 's/^/  /' "$lock"
+  exit 0
+fi
+
+# ---- lock verification ---------------------------------------------------------
+lock_state="OK"
+if [ ! -f "$lock" ]; then
+  lock_state="NONE (after plan DONE and owner approval: exit-check $m --freeze)"
+else
+  frozen_at=$(awk '$1=="frozen-at"{print $2}' "$lock")
+  frozen_table=$(awk '$1=="table"{print $2}' "$lock")
+  if [ "$frozen_table" != "$table_hash" ]; then
+    lock_state="TAMPERED: ## Exit checks table changed since freeze"
+    git log --oneline "${frozen_at}..HEAD" -- "$plan" | sed 's/^/    /' > "$tmp/tl" || true
+  fi
+  while read -r kw path fhash; do
+    [ "$kw" = "file" ] || continue
+    if [ ! -f "$path" ]; then lock_state="TAMPERED: frozen file deleted: $path"
+    elif [ "$(sha "$path")" != "$fhash" ]; then lock_state="TAMPERED: frozen file edited: $path"; fi
+  done < "$lock"
+  case "$lock_state" in OK) lock_state="OK (frozen at $(git rev-parse --short "$frozen_at"))" ;; esac
+fi
+echo "lock: $lock_state"
+[ -s "$tmp/tl" ] 2>/dev/null && cat "$tmp/tl"
+
+# ---- worker's exit-progress ----------------------------------------------------
+# TSV: normkey \t grade \t raw line.  grade ∈ met | not yet | at risk[: reason] | ?
+: > "$tmp/worker"
+if [ -f "$handoff" ]; then
+  awk '/^exit-progress:/{p=1; next} p && /^- /{print substr($0, 3); next} p && /^[A-Za-z-]+:/{p=0}' "$handoff" > "$tmp/wlines"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    # split on → or ->
+    left=$(printf '%s' "$line" | awk '{ i = index($0, "→"); if (!i) i = index($0, "->"); if (i) print substr($0, 1, i - 1); else print $0 }')
+    right=$(printf '%s' "$line" | awk '{ i = index($0, "→"); n = length("→"); if (!i) { i = index($0, "->"); n = 2 } if (i) print substr($0, i + n); else print "" }')
+    g=$(norm "$right")
+    case "$g" in
+      met*) grade="met" ;; "not yet"*) grade="not yet" ;; "at risk"*) grade="at risk" ;; *) grade="?" ;;
+    esac
+    printf '%s\t%s\t%s\n' "$(norm "$left")" "$grade" "$line" >> "$tmp/worker"
+  done < "$tmp/wlines"
+  worker_src="handoff session $(awk '/^session:/{print $2}' "$handoff") phase $(awk '/^phase:/{print $2}' "$handoff") outcome $(awk '/^outcome:/{print $2}' "$handoff")"
+else
+  worker_src="(no handoff)"
+fi
+echo "worker: $worker_src"
+
+# ---- run -----------------------------------------------------------------------
+allow_first='^(pnpm|npx|node|turbo|tsc|vitest|playwright|bash|sh|test|\[|scripts/)'
+deny_any='(git push|rm -rf|curl |wget |ssh |sudo |chmod |> */dev/)'
+run_to() {  # $1 dir, $2 cmd, $3 outfile → exit status (124 = timeout); own process group so children die too
+  ( cd "$1" && perl -e '
+      my $t = shift; my $pid = fork; die "fork: $!" unless defined $pid;
+      if (!$pid) { setpgrp(0, 0); exec @ARGV; exit 127 }
+      $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 2; kill "KILL", -$pid; exit 124 };
+      alarm $t; waitpid($pid, 0); my $s = $?;
+      exit(($s & 127) ? 128 + ($s & 127) : ($s >> 8));
+    ' "$timeout_s" bash -c "$2" ) > "$3" 2>&1 && return 0 || return $?
+}
+clone=""
+ensure_clone() {
+  [ -n "$clone" ] && return 0
+  clone="$tmp/clone"
+  git clone -q -b "$m" "$root" "$clone" 2> "$tmp/clone.err" || { clone=""; return 1; }
+}
+
+pass=0; fail=0; owner=0; other=0; agree=0; disagree=0; missing=0; atrisk=0; unmatched=0
+: > "$tmp/report"
+while IFS=$'\t' read -r id crit kind check; do
+  result="SKIP"; tail=""
+  if [ "$kind" = "owner" ]; then
+    result="OWNER"; owner=$((owner + 1))
+  elif [ $norun = 1 ]; then
+    result="SKIP (--no-run)"
+  elif ! printf '%s' "$check" | grep -Eq "$allow_first" || printf '%s' "$check" | grep -Eq "$deny_any"; then
+    result="REFUSED (command outside allowlist; a check changes only by re-plan)"; other=$((other + 1))
+  else
+    dir="$wt"; note=""
+    if [ "$kind" = "clean-clone" ]; then
+      if [ $fast = 1 ]; then note=" (worktree; run without --fast before finish)"
+      elif ensure_clone; then dir="$clone"; note=" (clean clone)"
+      else result="FAIL (clone failed: $(head -1 "$tmp/clone.err"))"; fail=$((fail + 1)); dir=""; fi
+    fi
+    if [ -n "$dir" ]; then
+      if run_to "$dir" "$check" "$tmp/out.$id"; then result="PASS$note"; pass=$((pass + 1))
+      else
+        rc=$?
+        if [ "$rc" = 124 ]; then result="TIMEOUT (${timeout_s}s)"; other=$((other + 1))
+        else result="FAIL (exit $rc)$note"; fail=$((fail + 1)); fi
+        tail=$(tail -5 "$tmp/out.$id" | sed 's/^/   | /')
+      fi
+    fi
+  fi
+  # join with the worker's line
+  key=$(norm "$crit")
+  wline=$(awk -F'\t' -v k="$key" '$1==k{print; exit}' "$tmp/worker")
+  if [ -z "$wline" ]; then
+    if [ -s "$tmp/worker" ] || [ -f "$handoff" ]; then wgrade="(no line)"; cmp="MISSING"; missing=$((missing + 1))
+    else wgrade="-"; cmp="-"; fi
+  else
+    wgrade=$(printf '%s' "$wline" | cut -f2)
+    case "$wgrade" in
+      "at risk") cmp="AT-RISK (owner question)"; atrisk=$((atrisk + 1)) ;;
+      "?") cmp="UNMATCHED grade (use met | not yet | at risk)"; unmatched=$((unmatched + 1)) ;;
+      *) case "$result" in
+           PASS*) [ "$wgrade" = met ] && { cmp="AGREE"; agree=$((agree + 1)); } || { cmp="DISAGREE (check passes, worker says not yet)"; disagree=$((disagree + 1)); } ;;
+           FAIL*) [ "$wgrade" = met ] && { cmp="DISAGREE (worker says met, check fails)"; disagree=$((disagree + 1)); } || { cmp="AGREE"; agree=$((agree + 1)); } ;;
+           OWNER) [ "$wgrade" = met ] && cmp="OWNER-CLAIM (owner verifies)" || cmp="OWNER (pending)" ;;
+           *) cmp="-" ;;
+         esac ;;
+    esac
+    printf '%s\n' "$key" >> "$tmp/matched"
+  fi
+  printf '%-3s %-16s %-44s worker: %-10s → %s\n' "$id" "$kind" "$result" "$wgrade" "$cmp" >> "$tmp/report"
+  case "$cmp" in AT-RISK*|DISAGREE*|OWNER-CLAIM*) printf '   | worker wrote: %s\n' "$(printf '%s' "$wline" | cut -f3)" >> "$tmp/report" ;; esac
+  [ -n "$tail" ] && printf '%s\n' "$tail" >> "$tmp/report"
+  [ -n "$tail" ] && printf '   | %s\n' "\$ $check" >> "$tmp/report"
+done < "$tmp/rows"
+
+# exit-progress lines that match no row
+if [ -s "$tmp/worker" ]; then
+  while IFS=$'\t' read -r key grade raw; do
+    grep -qxF "$key" "$tmp/matched" 2>/dev/null || { printf 'UNMATCHED exit-progress line (no such Criterion in the table): %s\n' "$raw" >> "$tmp/report"; unmatched=$((unmatched + 1)); }
+  done < "$tmp/worker"
+fi
+
+cat "$tmp/report"
+printf 'summary: %d PASS %d FAIL %d OWNER %d other | agree %d disagree %d at-risk %d missing %d unmatched %d | lock %s\n' \
+  "$pass" "$fail" "$owner" "$other" "$agree" "$disagree" "$atrisk" "$missing" "$unmatched" "${lock_state%%[: (]*}"
+exit 0
