@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Repo-local replacement for superpowers' subagent-driven-development
+# scripts/sdd-workspace. Same contract (print the plan's workspace dir),
+# different location: docs/sdd/<milestone>/ instead of .superpowers/sdd/.
+#
+# Slug rule: the implementation plan is docs/plans/<milestone>.impl.md, so the
+# workspace is docs/sdd/<milestone>/ and sits next to the plan it belongs to.
+# Briefs and review packages are regenerable scratch (gitignored); the ledger
+# progress.md is history and is tracked.
+#
+# Usage: sdd-workspace PLAN_FILE
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+  echo "usage: sdd-workspace PLAN_FILE" >&2
+  exit 2
+fi
+
+plan=$1
+[ -f "$plan" ] || { echo "no such plan file: $plan" >&2; exit 2; }
+
+slug=$(basename "$plan" .md)
+slug=${slug%.impl}
+[ -n "$slug" ] && [ "$slug" != "." ] && [ "$slug" != ".." ] \
+  || { echo "cannot derive a workspace name from: $plan" >&2; exit 2; }
+
+root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+dir="$root/docs/sdd/$slug"
+mkdir -p "$dir"
+cd "$dir" && pwd

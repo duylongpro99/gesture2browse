@@ -1,0 +1,7 @@
+# SDD scratch (regenerable). The ledger docs/sdd/*/progress.md is tracked.
+docs/sdd/*/task-*-brief.md
+docs/sdd/*/task-*-report.md
+docs/sdd/*/review-*.diff
+
+# Local Claude Code settings
+.claude/settings.local.json
