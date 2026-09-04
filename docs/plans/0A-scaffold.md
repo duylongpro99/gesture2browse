@@ -71,9 +71,15 @@ _Owned by the 0A session; rewritten, not appended._
 - Spec (`0A-scaffold.spec.md`), implementation plan (`0A-scaffold.impl.md`), this plan, the Exit checks table, and the three frozen contract tests written.
 - SDD workspace generated under `docs/sdd/0A/`.
 
-**In progress:** none (planning complete; ready for execute sessions).
+**Done (session 2, execute):**
+- Task 1 (7279f1a) — pnpm + Turborepo monorepo scaffold: root config (`package.json`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`, eslint/prettier, `vitest.workspace.ts`) and empty-but-buildable `protocol`/`gesture-core`/`page-index` package skeletons. `pnpm build`/`lint`/`typecheck` green.
+- Task 2 (22e286c) — `packages/protocol` schemas: `GestureFrame` v0, `FixtureRecord`/`FixtureFrame`/`FixtureMeta`, provisional `Intent` v0, `BENCH_COLUMNS`/`BenchRow`, shared `Handedness`/`GestureLabel` enums. `schemas.test.ts` plus the three frozen contract tests pass (21/21) without editing them.
+- Fix-round d415e2a — `vitest.workspace.ts` now references `apps/playground` only once it exists, so root-level `vitest run <path>` (used by exit checks E2/I1–I3) does not crash before Task 5 scaffolds the app.
+- Exit check (`--fast`): **E1, I1, I2, I3 PASS**; E2 (roundtrip, Task 4) and E3 (bench, Task 5) not yet.
 
-**Next:** execute impl Task 1 (monorepo scaffold), then Tasks 2–8 in order; one execute session per task, scope derived from each task's Files block.
+**In progress:** none this session (scope was Tasks 1–2).
+
+**Next:** execute impl Task 3 (`gesture-core` v0: filter, normalizer, features, classifier, FSM, replay; includes the `.claude/rules/gesture-core.md` `@gesture/protocol` allowance edit), then Tasks 4–8 in order.
 
 **Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):**
 - 0A fixes three interfaces for 0B/0D/1A: `FixtureRecord` (raw MediaPipe landmarks, `gesture-fixture/v0`), `GestureFrame` v0, bench CSV `BENCH_COLUMNS`. `Intent` v0 is provisional and finalized by 1A.
