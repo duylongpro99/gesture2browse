@@ -77,9 +77,18 @@ _Owned by the 0A session; rewritten, not appended._
 - Fix-round d415e2a — `vitest.workspace.ts` now references `apps/playground` only once it exists, so root-level `vitest run <path>` (used by exit checks E2/I1–I3) does not crash before Task 5 scaffolds the app.
 - Exit check (`--fast`): **E1, I1, I2, I3 PASS**; E2 (roundtrip, Task 4) and E3 (bench, Task 5) not yet.
 
-**In progress:** none this session (scope was Tasks 1–2).
+**Done (session 3, execute):**
+- Task 3 (b057427) — `gesture-core` v0: `OneEuroFilter`, `normalizeLandmarks`, `pinchDistance`/`fingerExtension`, `Classifier` interface + `KnnClassifier` placeholder, XState v5 FSM skeleton (`Paused`/`Armed` palm-clutch + fist-motion `Scroll`; **all gesture timing in the machine**, constants in `constants.ts`), `replayFixture`. `.claude/rules/gesture-core.md` "May depend on" gains `@gesture/protocol` (types only) in the same commit (CLAUDE.md §5). 13 tests pass; typecheck + lint clean.
+- Task 4 (aa5086d) — synthetic `fixtures/gestures/placeholder.json` (`Closed_Fist`, 30 frames) and `fixtures/bench/placeholder.y4m` (64×64 I420, 10 frames), their generators, `scripts/fixtures/play.ts`, `fixtures/README.md`, and `packages/gesture-core/test/roundtrip.test.ts`.
+- Exit check (`--fast`): **E1, E2, I1, I2, I3 PASS**; E3 (bench, Task 5) not yet.
 
-**Next:** execute impl Task 3 (`gesture-core` v0: filter, normalizer, features, classifier, FSM, replay; includes the `.claude/rules/gesture-core.md` `@gesture/protocol` allowance edit), then Tasks 4–8 in order.
+**Deviation (session 3):** impl Task 4 step 4 said add `tsx` to root `package.json`. Root `package.json` is outside this session's write scope, and `tsx` is not listed in tech-stack §1–2 (CLAUDE.md §2 would require a new row). The fixture generators instead run on **Node 24's built-in TypeScript execution** (repo already requires `engines.node >= 24`) — no new dependency, so no ADR and no tech-stack change. Not a §1–2 boundary break; recorded here per CLAUDE.md §6.
+
+**In progress:** none (scope was Tasks 3–4).
+
+**Next:** execute impl Task 5 (`apps/playground` bench harness + CSV export + headless bench e2e — turns E3 green), then Tasks 6–8 in order.
+
+**Scaffolding follow-up flagged for the owner / next session (not an exit blocker, E2 is green):** root `package.json` should add `@gesture/protocol` and `@gesture/gesture-core` as `workspace:*` `devDependencies` so `scripts/fixtures/play.ts` and `generate-placeholder-fixture.ts` resolve the workspace packages when run from the repo root. Deferred because root `package.json` is out of this session's write scope (it belongs to Task 1 scaffolding). Task 5 scaffolds `apps/playground` and touches root `package.json`, so it can fold this in.
 
 **Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):**
 - 0A fixes three interfaces for 0B/0D/1A: `FixtureRecord` (raw MediaPipe landmarks, `gesture-fixture/v0`), `GestureFrame` v0, bench CSV `BENCH_COLUMNS`. `Intent` v0 is provisional and finalized by 1A.
