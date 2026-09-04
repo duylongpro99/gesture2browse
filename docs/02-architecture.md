@@ -18,25 +18,25 @@
 flowchart LR
   subgraph Chrome["Chrome (Manifest V3 extension)"]
     direction TB
-    OFF["Offscreen document<br/>(reason: USER_MEDIA)<br/>Camera · MediaPipe · 1€ filter"]
-    SW["Service worker<br/>Gesture state machine · Policy · Action dispatcher · Tab registry"]
+    OFF["Offscreen document<br/>(reason: USER_MEDIA)<br/>Camera · MediaStreamTrackProcessor"]
+    WK["Inference Worker<br/>(inside offscreen)<br/>MediaPipe (OffscreenCanvas, WebGL) · own classifier · 1€ filter"]
+    SW["Service worker<br/>Gesture state machine · Policy · Action dispatcher · Tab registry · agent-core (Phase 2)"]
     CS["Content script (per tab)<br/>Cursor overlay · Interactable index · Snapping · Preview highlights · A11y tree extraction"]
     SP["Side panel (React)<br/>Status HUD · Suggestions · Agent log · Settings · Calibration"]
     DBG["chrome.debugger → CDP<br/>Input.dispatchMouseEvent / KeyEvent · Page.captureScreenshot"]
-    OFF -- "GestureFrame @30fps<br/>(runtime.Port)" --> SW
-    SW -- "PointerUpdate / Highlight / Preview" --> CS
+    OFF -- "transferred ReadableStream&lt;VideoFrame&gt;" --> WK
+    WK -- "PointerUpdate @camera rate<br/>(direct runtime.Port)" --> CS
+    WK -- "discrete Intents / GestureFrame<br/>(runtime.Port)" --> SW
     CS -- "InteractableIndex / HitTest / A11ySnapshot" --> SW
-    SW -- "trusted input" --> DBG
+    SW -- "trusted input (trusted-click mode only)" --> DBG
     SW <-- "state, suggestions, commands" --> SP
+    SW -- "OpenAI-compatible API (BYOK, runtime host perm)" --> LLM[("LLM provider<br/>custom gateway · OpenRouter · local vLLM/Ollama · vendor compat endpoints")]
   end
-  subgraph Companion["Local companion (Node, optional, Phase 2)"]
+  subgraph Companion["Local companion (Node, OPTIONAL, Phase 3)"]
     direction TB
-    NM["Native messaging host"]
-    AG["Agent runtime<br/>agent-core · OpenAI-compatible tool loop · tool allowlist · injection guard"]
-    NM --> AG
+    NM["Native messaging host<br/>OS keychain · on-device models · OS-level pointer"]
   end
-  SW <-- "Native Messaging (stdio JSON)" --> NM
-  AG -- "OpenAI-compatible API (user-configured baseURL)" --> LLM[("LLM provider<br/>custom gateway · OpenRouter · local vLLM/Ollama · vendor compat endpoints")]
+  SW <-. "Native Messaging (stdio JSON), when installed" .-> NM
   CAM(("Webcam")) --> OFF
   MIC(("Mic (Phase 2)")) --> SP
 ```
@@ -47,9 +47,9 @@ flowchart LR
 |---|---|---|---|
 | Delivery form | Chrome extension | Desktop app emulating an OS mouse (Gameface style); Electron shell browser | Extension has the DOM, so it can snap to targets and describe the page to the agent; users keep their own browser, logins, and extensions. Desktop-level control is a later companion, not the core. |
 | Camera host | Offscreen document with `USER_MEDIA` reason | Side panel (unreliable `getUserMedia`), popup (dies on blur), content script (per-tab permission prompts, leaks video into page context), dedicated pinned tab (works, but ugly) | One long-lived hidden document owns the camera for the whole browser session; pinned tab kept as fallback. |
-| Inference location | In the offscreen document (WASM + WebGPU/WebGL) | Native companion with Python MediaPipe | Zero install for the MVP; keeps video inside Chrome's sandbox; GPU delegate performance is sufficient on target hardware. Native inference stays an option behind the same `GestureFrame` interface. |
-| Input dispatch | CDP via `chrome.debugger` with content-script fallback | Content-script `dispatchEvent` only | Synthetic events are `isTrusted=false` and ignored by many frameworks, iframes, and canvas apps; CDP events are indistinguishable from real input. Fallback covers pages where the debugger cannot attach. |
-| Agent placement | Local companion process via native messaging | Direct API calls from the extension; hosted backend | API keys and sensitive tool execution stay out of the extension and off the web; Agent SDK gives the loop, MCP, and permission hooks for free. Hosted backend can be added later behind the same message protocol. |
+| Inference location | In a **Worker inside the offscreen document** (WASM-SIMD + WebGL); frames arrive via `MediaStreamTrackProcessor` → transferred `ReadableStream`, not `requestVideoFrameCallback` | Native companion with Python MediaPipe; MediaPipe on the offscreen document's own thread | A hidden offscreen document never fires `rAF`/`rVFC` and its timers align to 1 Hz, so the frame pump must be camera-driven in a Worker (04-feasibility A1). No WebGPU delegate exists in tasks-vision (A3). Native inference stays an option behind the same `GestureFrame` interface. |
+| Input dispatch | **Hybrid**: content-script synthetic events by default, CDP via `chrome.debugger` only in trusted-click mode or for targets needing user activation | CDP-primary; content-script only | The debugger infobar is unavoidable and forces manual Web Store review, so CDP is opt-in, not the default (04-feasibility B1). Phase 0 G5 measures the fraction of sites where synthetic clicks fail. `debugger` is an optional permission. |
+| Agent placement | **Agent loop in the service worker** (`agent-core`, OpenAI-compatible tool loop, BYOK) | Local companion process via native messaging; hosted backend; Claude Agent SDK | Anthropic prohibits subscription login in third-party apps and the Agent SDK bundles a ~200 MB binary (04-feasibility A4). BYOK keeps the key in the service worker with a disclosure. A companion re-enters in Phase 3 only for an OS keychain, on-device models, or OS-level pointer; a hosted backend is a later paid tier behind the same message protocol. |
 | Agent perception | Accessibility tree + interactable index first, screenshot on demand | Screenshot-only (computer-use style) | Tree is cheap, deterministic, and maps 1:1 to the snapping targets the user already sees; screenshots are added for canvas/visual layouts. |
 
 ## 3. Components
@@ -58,23 +58,33 @@ flowchart LR
 
 Responsibilities: camera capture, hand landmark + gesture inference, pointer derivation, smoothing, framing into `GestureFrame`.
 
+The offscreen document acquires the camera; a dedicated **Worker** owns inference. A hidden offscreen document cannot drive a frame pump (`rAF`/`rVFC` never fire, timers align to 1 Hz — 04-feasibility A1), so frames are pushed by the camera, not pulled by visibility:
+
 ```
-getUserMedia(720p, 30fps)
-  → <video> → requestVideoFrameCallback
-  → GestureRecognizer.recognizeForVideo(frame, ts)     // MediaPipe tasks-vision, VIDEO mode, 1 hand (2 optional)
-  → Landmark normalizer (translate to wrist, scale by palm size, mirror if selfie)
-  → Derived features: pinch distance (4↔8) / palm size, finger extension flags, wrist velocity, hand bbox scale
-  → Pointer = landmark 8 (index tip) mapped from calibrated active box → viewport [0,1]²
-  → 1€ filter on pointer (min_cutoff≈1.0 Hz, beta≈0.007, d_cutoff≈1.0) — tuned in calibration
-  → GestureFrame { ts, present, handedness, gesture, score, pinch, features, pointer, raw landmarks? }
-  → runtime.Port.postMessage (structured clone; landmarks omitted unless recording)
+offscreen doc:
+  getUserMedia(640×480, 30fps)
+  → new MediaStreamTrackProcessor({ track })
+  → transfer processor.readable (ReadableStream<VideoFrame>) to the Worker
+
+inference Worker (OffscreenCanvas):
+  for await (const frame of readable):
+    → HandLandmarker.detectForVideo(frame, ts)          // MediaPipe tasks-vision, VIDEO mode, 1 hand; GestureRecognizer only as interim reference
+    → frame.close()
+    → Landmark normalizer (translate to wrist, scale by palm size, mirror if selfie)
+    → 1€ filter on landmarks 0, 4, 8, 9 (tasks output is unsmoothed) and on the pointer
+    → Own classifier (MLP/kNN over normalized landmarks, mandatory "none" class, palm-facing gate, 3-frame vote, score ≥ 0.6)
+    → Derived features: pinch distance (4↔8) / dist(0,9), finger extension flags, wrist velocity, hand bbox scale
+    → Pointer = landmark 8 (index tip) mapped from calibrated active box → viewport [0,1]²
+    → GestureFrame { ts, present, handedness, gesture, score, pinch, features, pointer, raw landmarks? }
+    → runtime.Port: PointerUpdate direct to the content script (@camera rate); discrete Intents / GestureFrame to the service worker
 ```
 
 Notes:
-- Run inference in a Web Worker inside the offscreen document when WebGPU-in-workers is available, so the offscreen document's own thread stays responsive for port messaging; fall back to main thread of the offscreen document otherwise.
-- Delegate selection at startup: WebGPU → WebGL → WASM-CPU, based on a 2-second self-benchmark; result cached.
+- Delegate selection at startup: **WebGL → WASM-SIMD CPU** (no WebGPU — it does not exist in tasks-vision, 04-feasibility A3), decided by a timed first inference (init > 5 s or per-frame > 40 ms → CPU); result cached.
+- `webglcontextlost` recovery: recreate the recognizer on context loss (blocklisted GPUs and SwiftShader deprecation mean context creation can fail outright); feature-detect WebGL2 → WASM fallback.
 - Adaptive frame rate: drop to 15 fps when no hand has been seen for 5 s (saves CPU); resume at 30 fps on detection.
-- Model bundle: `gesture_recognizer.task` (canned 7 gestures). A custom `.task` from Model Maker can be swapped in via settings (Phase 3).
+- Model bundle: `hand_landmarker.task`. The own classifier is trained in-browser from fixtures (retires Model Maker); custom per-user gestures use the same path (Phase 3 UI).
+- Transfer the `ReadableStream`, not the `MediaStreamTrack` (transferable tracks are unmaintained in Chrome). Landmarks are omitted from the port payload in steady state (structured clone) unless recording.
 
 ### 3.2 Service worker — control plane
 
@@ -82,10 +92,10 @@ Responsibilities: gesture state machine, policy, mapping gestures to actions, ta
 
 - **Gesture state machine** (XState): consumes `GestureFrame`s, emits `Intent`s. States: `Paused`, `Armed.Idle`, `Armed.Pointing`, `Armed.PinchDown`, `Armed.Dragging`, `Armed.Scrolling`, `Armed.SwipeArmed`, `Armed.HoldGesture(kind)`, `Agent.Proposing`, `Agent.AwaitingConfirm`. Hold timers, cooldowns, and hysteresis live here, not in the recognizer. Event-sourced: every transition is logged for diagnostics and replay tests.
 - **Action mapper**: `Intent × Profile → Action`. Profiles: Accessibility, Standard, Presenter; user overrides stored in `chrome.storage.sync`.
-- **Action dispatcher**: executes `Action`s: `pointer.move` → content script; `click`/`drag`/`key` → CDP `Input.*` on the active tab (attaches lazily, detaches after 10 s idle or on pause); `scroll` → CDP `Input.dispatchMouseEvent(type=mouseWheel)` or content-script `scrollBy` with inertia; `history.back/forward`, `tabs.*`, `zoom` → chrome APIs.
+- **Action dispatcher**: executes `Action`s. `click`/`drag`/`key` default to **content-script synthetic events**; CDP `Input.*` is used only in trusted-click mode or when the target needs user activation (attaches per gesture session, detaches on pause). `scroll` → content-script `scrollBy` with inertia (or CDP `Input.dispatchMouseEvent(type=mouseWheel)` in trusted mode); `history.back/forward`, `tabs.*`, `zoom` → chrome APIs. Pointer moves do not pass through the service worker: the inference Worker streams `PointerUpdate` to the content script directly.
 - **Tab registry**: tracks active tab, iframe frames, and whether the content script is alive; re-injects on SPA route change if needed.
 - **Policy engine**: site allow/deny for agent; guarded-action classification; kill switch fan-out.
-- **Keep-alive**: MV3 service workers idle out after 30 s; the open runtime Port from the offscreen document keeps it alive while tracking is armed, and `chrome.alarms` handles reconnection.
+- **Keep-alive and state**: the service worker is **stateless** — session state lives in `chrome.storage.session`, reconnecting on `onDisconnect`. MV3 workers idle out after 30 s; the open runtime Port from the offscreen document (carrying discrete intents) resets the timer while tracking is armed, and `chrome.alarms` handles reconnection. Ports are not treated as an indefinite keep-alive.
 
 ### 3.3 Content script — page plane
 
@@ -102,17 +112,19 @@ Injected into every frame (`all_frames: true`, `document_start`), isolated world
 
 React app in `chrome.sidePanel`. Shows tracking status, camera preview toggle (landmark skeleton only, not raw video, by default), calibration wizard, gesture map editor, profiles, agent suggestions, agent step log with cancel, safety policy display, diagnostics. Also hosts the microphone for voice input in Phase 2 (side panel is a visible, user-opened surface, which is the right place for mic permission).
 
-### 3.5 Local companion — agent plane (Phase 2)
+**Camera/mic grant page** (`grant-camera.html`, full tab). `getUserMedia` fails with `NotAllowedError` in the offscreen, popup, and side-panel pages unless the `chrome-extension://<id>` origin already holds a persistent grant, and Chrome's "Allow this time" grant is revoked on tab close (04-feasibility A2). Onboarding therefore opens a full-tab extension page via `chrome.tabs.create`, requests camera (and mic, Phase 2) there, and instructs the user to pick "Allow on every visit". Before every offscreen start the extension checks `navigator.permissions.query({name:'camera'})` and routes back to this page if it is not `granted`.
 
-Node 24 process registered as a native messaging host. Started by the extension on first agent use.
+### 3.5 Agent plane — in the service worker (Phase 2)
 
-- **Protocol**: newline-delimited JSON over stdio (native messaging framing), messages: `observe`, `propose`, `run_task`, `confirm`, `cancel`, `status`. All actions flow back as `ProposedAction` and are executed by the *service worker*, never by the companion directly. The companion has no CDP access.
-- **Agent runtime**: own `agent-core` tool loop over the OpenAI-compatible Chat Completions API with a custom tool set mirroring the extension's action surface (`observe_page`, `click`, `type`, `scroll`, `navigate`, `select_tab`, `propose`, `request_confirmation`). Each tool call returns to the extension for execution and reports back the observed result, giving the model a closed loop. No vendor SDK; any endpoint that speaks `/v1/chat/completions` with tools works.
+The agent loop runs **inside the service worker** via the `agent-core` package; there is no local companion in the MVP (04-feasibility A4). Anthropic prohibits subscription login in third-party apps and the Agent SDK bundles a ~200 MB binary, so the design is BYOK against any OpenAI-compatible endpoint.
+
+- **Agent runtime**: own `agent-core` tool loop over the OpenAI-compatible Chat Completions API with a custom tool set mirroring the extension's action surface (`observe_page`, `click`, `type`, `scroll`, `navigate`, `select_tab`, `propose`, `request_confirmation`). Each tool call is executed by the service worker's dispatcher and reports back the observed result, giving the model a closed loop. No vendor SDK; any endpoint that speaks `/v1/chat/completions` with tools works.
 - **Provider config**: `{ baseURL, apiKey, models: { fast, planner }, preset? }`, set by the user in the side panel. A setup-time capability probe records whether the endpoint supports tool calling, streaming, and `response_format: json_schema`; missing features switch on fallbacks (JSON-in-text parsing, non-streamed responses).
 - **Model routing**: `fast` for suggestions and single steps (latency), `planner` for multi-step task planning; both are just model ids on the configured endpoint.
-- **Injection guard**: page text is wrapped in a delimiter block labelled as untrusted; a regex/small-classifier pass looks for imperative instructions to the assistant in page content; positives force a `request_confirmation`.
+- **Injection guard**: page text is wrapped in a delimiter block labelled as untrusted; hidden/zero-size/off-screen nodes and HTML comments are stripped at extraction; a regex/small-classifier pass looks for imperative instructions to the assistant; positives force a `request_confirmation`.
 - **Guarded action classifier**: rule-based (URL patterns, button text, form field types `password`, `cc-number`, `email` submit) plus model self-report; marks actions that require thumbs-up.
-- **Secrets**: API key or OAuth token lives in the companion's OS keychain entry, never in `chrome.storage`.
+- **Secrets**: the API key lives in the service worker only (`chrome.storage.session`, optional persist to `local` after a plain disclosure that extension storage is not an OS keychain — 04-feasibility B7), never in a content script, and is sent only to the configured `baseURL`.
+- **Optional companion (Phase 3)**: a Node native-messaging host re-enters only to provide an OS keychain, on-device speech/vision models, or an OS-level pointer. It has no CDP access; all actions still execute in the service worker. Protocol: newline-delimited JSON over stdio (`observe`, `propose`, `run_task`, `confirm`, `cancel`, `status`).
 
 ## 4. Data flow
 
@@ -160,16 +172,20 @@ sequenceDiagram
   Co-->>SW: propose[{id:"open-pricing", action:click(23), label:"Open Pricing", guarded:false}, ...]
   SW->>SP: show suggestions
   SW->>CS: highlight candidates
-  Off->>SW: Thumb_Up held 600 ms
+  Off->>SW: Thumb_Up held 700–800 ms
   SW->>SW: AwaitingConfirm → Execute top suggestion
-  SW->>CS: Preview{23, "Open Pricing"} (400 ms)
-  SW->>SW: dispatch click via CDP
+  SW->>Co: critic(action object, metadata only — no page text)
+  Co-->>SW: allow / needs-confirm
+  SW->>CS: Preview{23, "Open Pricing"} (≥ 400 ms)
+  SW->>SW: dispatch click (content-script default; CDP in trusted mode)
   SW->>Co: result{ok, newUrl}
 ```
 
+**Propose-only is the default mode**: the agent surfaces suggestions and does not execute until the user opts into execute mode for the session. Before any *write* action a **metadata-only critic** call (`fast` model) sees the proposed action object — never page text — and can force a confirmation. The preview UI renders target, origin, and value from the action object, never from model text.
+
 ### 4.3 Guarded action
 
-Same as 4.2, but the companion marks `guarded:true` (for example a "Place order" button). The service worker enters `Agent.AwaitingConfirm` with a 15 s timeout; only a `Thumb_Up` hold from the perception pipeline (or the keyboard confirm shortcut) transitions to execute. `Thumb_Down`, `Open_Palm` (pause), timeout, or panel Cancel abort and notify the companion.
+Same as 4.2, but the guarded-action classifier marks `guarded:true` (for example a "Place order" button). The service worker enters `Agent.AwaitingConfirm` with a 15 s timeout; only a `Thumb_Up` hold from the perception pipeline (or the keyboard confirm shortcut) transitions to execute. `Thumb_Down`, `Open_Palm` (pause), timeout, or panel Cancel abort and notify the agent loop.
 
 ## 5. Gesture state machine (core)
 
@@ -198,10 +214,12 @@ stateDiagram-v2
 ```
 
 Rules encoded in the machine, not the recognizer:
-- Confidence gating: a gesture label must exceed `score ≥ 0.7` for 3 consecutive frames to count.
+- Stable-tracking gate: no gesture fires until the hand has been tracked stably for ≥ 300 ms, so transient poses on hand entry cannot trigger an action.
+- Confidence gating: a gesture label must exceed its score threshold for 3 consecutive frames to count.
 - Cooldown after any discrete action prevents double fire.
-- Pinch hysteresis: in at `0.35 × palm width`, out at `0.5 × palm width` (defaults, calibrated per user).
-- Pointer freeze during pinch: pointer position is latched at pinch-in so the click lands where the user aimed.
+- Pinch hysteresis: in at `0.25 × dist(0,9)`, out at `0.35 × dist(0,9)` (defaults, calibrated per user); release plus 80–120 ms debounce.
+- Dwell-click: pointer held within a small radius over a snapped target for the dwell time (default 600 ms) emits a click — an MVP click mode alongside pinch, default in the Accessibility profile.
+- Pointer freeze during pinch: pointer position is latched at pinch-in (~150 ms) so the click lands where the user aimed.
 
 ## 6. Interfaces (TypeScript sketches)
 
@@ -262,21 +280,21 @@ flowchart TB
     CS["Content script (no secrets, no authority)"]
   end
   subgraph Trust2["Extension, control plane"]
-    SW["Service worker (policy, CDP)"]
-    OFF["Offscreen (video, never exported)"]
+    SW["Service worker (policy, CDP, agent-core + API key)"]
+    OFF["Offscreen + Worker (video, never exported)"]
     SP["Side panel"]
   end
-  subgraph Trust3["Companion"]
-    AG["Agent + API key (OS keychain)"]
+  subgraph Trust3["Companion (Phase 3, optional)"]
+    NM["OS keychain · on-device models · OS pointer"]
   end
   PAGE -. "text as data only" .-> CS --> SW
   OFF -- "landmarks only" --> SW
-  SW -- "snapshot, no cookies, no secrets" --> AG
-  AG -- "proposals, never direct actions" --> SW
+  SW -- "snapshot (no cookies, no secrets) → OpenAI-compatible API" --> LLM[("configured LLM provider")]
+  SW <-. "optional, when installed" .-> NM
 ```
 
-- Permissions requested: `offscreen`, `sidePanel`, `storage`, `tabs`, `scripting`, `debugger` (optional permission, requested on first need), `nativeMessaging` (optional, Phase 2), host permission `<all_urls>` for the content script (explained in onboarding).
-- The debugger banner is mitigated by attaching only while armed and detaching on pause.
+- Permissions requested: `offscreen`, `sidePanel`, `storage`, `tabs`, `scripting`; `debugger` (**optional** permission, requested on first need); `nativeMessaging` (**optional**, Phase 3); host permission `<all_urls>` for the content script (explained in onboarding). The LLM endpoint host is not known at build time, so it is requested at runtime via `optional_host_permissions` (`https://*/*`, granted only for the configured `baseURL` origin).
+- The debugger banner is mitigated by using CDP only in trusted-click mode and detaching on pause.
 - No frame, landmark, or screenshot is persisted unless the user records custom gestures (landmarks only) or opts into diagnostics.
 - Companion binds to stdio only; no local HTTP server, so no cross-origin exposure.
 
@@ -284,7 +302,7 @@ flowchart TB
 
 | Stage | Target | Technique |
 |---|---|---|
-| Inference | ≤ 15 ms/frame GPU, ≤ 40 ms CPU | GPU delegate; 1 hand max; 720p → 480p downscale on weak machines; adaptive fps when idle |
+| Inference | ≤ 15 ms/frame WebGL, ≤ 40 ms WASM-SIMD | WebGL delegate (no WebGPU); 1 hand max; capture 640×480 (input resolution barely affects inference — models resize internally); adaptive fps when idle; cold GPU init up to 30 s, warm at install |
 | Offscreen → SW | ≤ 1 ms | Port messaging, no landmarks in steady state |
 | SW → CS pointer | ≤ 2 ms | Port per tab; coalesce to one message per frame |
 | Cursor render | 60–120 Hz | rAF interpolation; `transform` only; `will-change` |
@@ -308,12 +326,14 @@ human-gesture/
   apps/
     extension/            # WXT project (MV3)
       entrypoints/
-        offscreen/        # camera + MediaPipe pipeline
-        background.ts     # service worker: FSM, dispatcher, policy
+        offscreen/        # camera capture + MediaStreamTrackProcessor
+        offscreen/inference.worker.ts  # MediaPipe (OffscreenCanvas, WebGL), classifier, 1€ filter
+        background.ts     # service worker: FSM, dispatcher, policy, agent-core (Phase 2)
         content/          # overlay, index, snapping
         sidepanel/        # React UI
-      public/models/      # gesture_recognizer.task, wasm
-    companion/            # Node native-messaging host (optional: OS keychain, local models)
+        grant-camera/     # full-tab camera/mic permission page
+      public/models/      # hand_landmarker.task, wasm
+    companion/            # Node native-messaging host (Phase 3, optional: OS keychain, local models)
     playground/           # Phase-0 web page for tuning and demos
   packages/
     gesture-core/         # features, 1€ filter, FSM, types (pure TS, no DOM)
