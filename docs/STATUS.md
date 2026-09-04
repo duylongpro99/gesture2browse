@@ -17,6 +17,6 @@ _Project section last updated: 2026-09-04 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 0A scaffold, harness, `gesture-core` v0 | drv-0A | Not started. Next: task 0.1 apply `04-feasibility §4` edits to docs 01–03. | `docs/plans/0A-scaffold.md` (to write) | 2026-09-04 |
+| 0A scaffold, harness, `gesture-core` v0 | drv-0A | Planning done (task 0.1 doc edits approved; spec/impl/plan + frozen exit checks + 3 contract tests + SDD workspace committed). Next: execute impl Task 1 (monorepo scaffold), then Tasks 2–8. | `docs/plans/0A-scaffold.md` | 2026-09-04 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
