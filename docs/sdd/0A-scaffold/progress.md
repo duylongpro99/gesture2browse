@@ -4,8 +4,8 @@ Tracked history for the execute phase of milestone 0A. Plan: `docs/plans/0A-scaf
 
 | Task | Title | Owner rule | State | Commit |
 |---|---|---|---|---|
-| 1 | Monorepo scaffold and tooling | protocol/* | not started | — |
-| 2 | protocol — schemas for the three fixed interfaces + Intent v0 | `.claude/rules/protocol.md` | not started | — |
+| 1 | Monorepo scaffold and tooling | protocol/* | done | 7279f1a, d415e2a |
+| 2 | protocol — schemas for the three fixed interfaces + Intent v0 | `.claude/rules/protocol.md` | done | 22e286c |
 | 3 | gesture-core v0 (filter, normalizer, features, classifier, FSM, replay) + rule edit | `.claude/rules/gesture-core.md` | not started | — |
 | 4 | Fixtures — synthetic generator, placeholder fixture + y4m, player/recorder | `.claude/rules/fixtures-and-tests.md` | not started | — |
 | 5 | playground — bench harness with CSV export, headless bench | `.claude/rules/fixtures-and-tests.md` | not started | — |
@@ -19,13 +19,14 @@ Run `scripts/milestone/exit-check 0A --fast` after each session.
 
 | # | Criterion | State |
 |---|---|---|
-| E1 | `pnpm build`, `pnpm test` green from a clean clone | not yet |
-| E2 | fixture round-trip test | not yet |
-| E3 | bench harness runs headless on a placeholder y4m | not yet |
-| I1 | Fixture record shape | not yet (contract test present, fails until Task 2) |
-| I2 | GestureFrame v0 | not yet (contract test present, fails until Task 2) |
-| I3 | bench CSV schema | not yet (contract test present, fails until Task 2) |
+| E1 | `pnpm build`, `pnpm test` green from a clean clone | PASS (--fast; full clean-clone still to run at finish) |
+| E2 | fixture round-trip test | not yet (Task 4 adds roundtrip.test.ts + fixture) |
+| E3 | bench harness runs headless on a placeholder y4m | not yet (Task 5 adds apps/playground) |
+| I1 | Fixture record shape | PASS |
+| I2 | GestureFrame v0 | PASS |
+| I3 | bench CSV schema | PASS |
 
 ## Log
 
 - 2026-09-04 (session 1, plan): planning complete. Task 0.1 doc edits applied and approved (93ddfb3). Spec, impl plan, plan, frozen exit checks, and the three frozen contract tests committed. SDD workspace created. Task 0.3 noted already satisfied by the repo. Execute phase starts at Task 1.
+- 2026-09-04 (session 2, execute): Tasks 1 and 2 done. Task 1 (7279f1a) scaffolds the pnpm/Turborepo workspace (root config + protocol/gesture-core/page-index skeletons); build/lint/typecheck green. Task 2 (22e286c) implements the protocol schemas (GestureFrame v0, FixtureRecord, Intent v0, bench) — schemas.test.ts + the three frozen contract tests all pass (21/21). Fix-round d415e2a guards vitest.workspace.ts against the not-yet-created apps/playground so root-level `vitest run` (exit checks E2/I1-I3) does not crash at startup. Exit check (--fast): E1/I1/I2/I3 PASS; E2/E3 not yet (Tasks 4/5). Next: Task 3 (gesture-core).
