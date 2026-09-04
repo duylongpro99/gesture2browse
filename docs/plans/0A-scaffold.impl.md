@@ -505,9 +505,11 @@ git commit -m "[fixtures] task 4: placeholder fixture + y4m, generator, player, 
 - Consumes: `@gesture/protocol` (`BENCH_COLUMNS`, `BenchRowSchema`, `Delegate`/`Recognizer`/`Resolution`), `@gesture/gesture-core` (`normalizeLandmarks`, features), `@mediapipe/tasks-vision`.
 - Produces: a `benchToCsv(rows: BenchRow[]): string` whose first line is `BENCH_COLUMNS.join(',')`; a headless-runnable bench that writes a CSV file.
 
-- [ ] **Step 1: Write the failing e2e.** `apps/playground/test/bench.e2e.ts` (Playwright): launch Chromium with `--use-fake-device-for-media-stream --use-file-for-fake-video-capture=fixtures/bench/placeholder.y4m`, open the bench page with query `?delegate=wasm&recognizer=handlandmarker&resolution=480p&frames=10`, wait for it to signal done, read the emitted CSV (from a download or a `window.__benchCsv` global), assert the header line equals `BENCH_COLUMNS.join(',')` and there is ≥ 1 data row.
+- [ ] **Step 1: Write the Playwright config and the failing e2e.** `apps/playground/playwright.config.ts`: `testDir: './test'`, one Chromium project whose `launchOptions.args` include `--use-fake-device-for-media-stream` and `--use-file-for-fake-video-capture=<repo-abs path>/fixtures/bench/placeholder.y4m` (resolve from the config dir so it works from repo root), `webServer` running the playground dev/preview server. `apps/playground/test/bench.e2e.ts`: open the bench page with query `?delegate=wasm&recognizer=handlandmarker&resolution=480p&frames=10`, wait for `window.__benchDone === true`, read `window.__benchCsv`, and **assert it is a non-empty string whose first line equals `BENCH_COLUMNS.join(',')` and which has ≥ 1 data row** (the test must FAIL if `__benchCsv` is absent or empty — this is the "produced CSV" gate).
 
-- [ ] **Step 2: Run to verify fail.** Run: `pnpm --filter @gesture/playground test:bench`. Expected: FAIL (no page/harness).
+  The frozen exit check **E3** runs this via `pnpm exec playwright test -c apps/playground/playwright.config.ts` (not `--filter`, which exits 0 when no package matches). That command fails today (no config, no harness, playwright not installed) and passes only once this task builds the harness and the e2e goes green.
+
+- [ ] **Step 2: Run to verify fail.** Run: `pnpm exec playwright test -c apps/playground/playwright.config.ts`. Expected: FAIL (no config/harness/CSV).
 
 - [ ] **Step 3: Implement `csv.ts`.**
 ```ts
@@ -523,7 +525,7 @@ export function benchToCsv(rows: BenchRow[]): string {
 
 - [ ] **Step 5: Implement the recorder (`recorder.ts`, owner-run).** A page that opens `getUserMedia`, runs `HandLandmarker`, and on stop writes a `FixtureRecord` (raw landmarks + world) download. Minimal UI; verified by the owner, not CI.
 
-- [ ] **Step 6: Verify e2e passes.** Run: `pnpm --filter @gesture/playground test:bench`. Expected: PASS (header equals `BENCH_COLUMNS`, ≥ 1 row).
+- [ ] **Step 6: Verify e2e passes.** Run: `pnpm exec playwright test -c apps/playground/playwright.config.ts` (same command as exit check E3). Expected: PASS (header equals `BENCH_COLUMNS`, ≥ 1 row, `__benchCsv` non-empty). A `test:bench` package script may alias this for convenience, but the exit check invokes playwright directly.
 
 - [ ] **Step 7: Commit.**
 ```bash
@@ -572,7 +574,7 @@ git commit -m "[extension] task 6: buildable WXT MV3 React skeleton"
 
 - [ ] **Step 2: Write a test fixture proving it fails, then passes.** Add a temporary file with `new VideoFrame()` under `content/`, run `node scripts/lint/boundary-lint.mjs`, expect exit 1; remove it, expect exit 0. (Document this manual check in the PR; no committed failing fixture.)
 
-- [ ] **Step 3: Write the workflow.** `.github/workflows/ci.yml`: on push/PR, Ubuntu, Node 24, pnpm; steps: `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm lint`, `node scripts/lint/boundary-lint.mjs`, `pnpm typecheck`, `pnpm test`, `npx playwright install --with-deps chromium`, `pnpm --filter @gesture/playground test:bench`, `pnpm --filter @gesture/extension zip`, upload the zip + any bench CSV as artifacts. Playwright job launches Chromium headless with the fake-device flags (already in `playwright.config.ts`).
+- [ ] **Step 3: Write the workflow.** `.github/workflows/ci.yml`: on push/PR, Ubuntu, Node 24, pnpm; steps: `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm lint`, `node scripts/lint/boundary-lint.mjs`, `pnpm typecheck`, `pnpm test`, `npx playwright install --with-deps chromium`, `pnpm exec playwright test -c apps/playground/playwright.config.ts` (the E3 bench check), `pnpm --filter @gesture/extension zip`, upload the zip + any bench CSV as artifacts. Playwright job launches Chromium headless with the fake-device flags (already in `playwright.config.ts`).
 
 - [ ] **Step 4: Verify locally.** Run: `pnpm install --frozen-lockfile && pnpm build && pnpm lint && node scripts/lint/boundary-lint.mjs && pnpm typecheck && pnpm test`. Expected: all exit 0.
 

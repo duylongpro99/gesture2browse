@@ -55,7 +55,7 @@ Frozen at plan time. `scripts/milestone/exit-check 0A` runs these after every se
 |---|---|---|---|
 | E1 | `pnpm build`, `pnpm test` green from a clean clone | clean-clone | `pnpm install --frozen-lockfile && pnpm build && pnpm test` |
 | E2 | fixture round-trip test | mechanical | `pnpm vitest run packages/gesture-core/test/roundtrip.test.ts` |
-| E3 | bench harness runs headless on a placeholder y4m | mechanical | `pnpm --filter @gesture/playground test:bench` |
+| E3 | bench harness runs headless on a placeholder y4m | mechanical | `pnpm exec playwright test -c apps/playground/playwright.config.ts` |
 | I1 | Fixture record shape | consumer:0B,0D,1A | `pnpm vitest run packages/protocol/test/contracts/fixture-record.contract.test.ts` |
 | I2 | GestureFrame v0 | consumer:0B,0D,1A | `pnpm vitest run packages/protocol/test/contracts/gestureframe-v0.contract.test.ts` |
 | I3 | bench CSV schema | consumer:0B,0D,1A | `pnpm vitest run packages/protocol/test/contracts/bench-csv.contract.test.ts` |
