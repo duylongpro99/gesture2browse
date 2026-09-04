@@ -5,3 +5,6 @@ docs/sdd/*/review-*.diff
 
 # Local Claude Code settings
 .claude/settings.local.json
+# driving-a-milestone scratch (regenerable); the worker's session-end writes are tracked
+docs/sdd/*/session-*-brief.md
+docs/sdd/*/handoff.md

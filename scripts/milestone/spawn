@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Spawn one worker Claude Code session inside a milestone worktree, as a Herdr
+# pane, through the cris-managed-session kit script (never re-implemented here).
+# Also: removes the previous session's handoff.md (so a stale one can never be
+# read as this session's), copies the root checkout's .claude/settings.local.json
+# (permission allowlist, gitignored, so the worktree lacks it) into the worktree.
+#
+# Usage: scripts/milestone/spawn <MILESTONE-ID> <ROLE>     ROLE: plan|execute|finish|probe
+# Prints: PANE=<id> N=<session number> NAME=hg-<M>-<ROLE>-<N> WORKTREE=<path>
+# The driver then writes docs/sdd/<M>/session-<N>-brief.md in the worktree and
+# sends:  herdr agent prompt <PANE> "Read docs/sdd/<M>/session-<N>-brief.md and follow it exactly." --wait
+set -euo pipefail
+[ $# -eq 2 ] || { echo "usage: spawn <MILESTONE-ID> <ROLE>" >&2; exit 2; }
+m=$1; role=$2
+[ "${HERDR_ENV:-}" = 1 ] || { echo "not inside Herdr (HERDR_ENV!=1); cannot spawn sessions" >&2; exit 1; }
+root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+wt="$(dirname "$root")/$(basename "$root")-$m"
+[ -d "$wt" ] || { echo "no worktree at $wt; run scripts/milestone/claim $m first" >&2; exit 3; }
+create="$root/.claude/skills/cris-managed-session/scripts/create-session.sh"
+[ -x "$create" ] || { echo "cris-managed-session skill not installed at .claude/skills/cris-managed-session" >&2; exit 4; }
+
+sdd="$wt/docs/sdd/$m"
+mkdir -p "$sdd"
+rm -f "$sdd/handoff.md"
+[ -f "$root/.claude/settings.local.json" ] && cp "$root/.claude/settings.local.json" "$wt/.claude/settings.local.json"
+n=$(find "$sdd" -maxdepth 1 -name 'session-*-brief.md' | wc -l | tr -d ' ')
+name="hg-$m-$role-$n"
+out=$(cd "$wt" && "$create" --s-name "$name" --p-name "$name")
+pane=$(printf '%s' "$out" | sed -n 's/.*in pane \([^ ]*\).*/\1/p')
+[ -n "$pane" ] || { echo "could not parse pane id from: $out" >&2; exit 5; }
+echo "PANE=$pane N=$n NAME=$name WORKTREE=$wt"

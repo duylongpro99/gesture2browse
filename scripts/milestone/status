@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Everything the driver reads between worker sessions, in one call:
+# handoff, SDD ledger, plan files and their ## Status, STATUS row, worktree git state.
+# Usage: scripts/milestone/status <MILESTONE-ID>
+set -euo pipefail
+[ $# -eq 1 ] || { echo "usage: status <MILESTONE-ID>" >&2; exit 2; }
+m=$1
+root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+wt="$(dirname "$root")/$(basename "$root")-$m"
+[ -d "$wt" ] || { echo "no worktree at $wt" >&2; exit 3; }
+cd "$wt"
+sec() { printf '\n===== %s\n' "$1"; }
+sec "handoff  docs/sdd/$m/handoff.md"
+cat "docs/sdd/$m/handoff.md" 2>/dev/null || echo "(none: this session wrote no handoff)"
+sec "ledger   docs/sdd/$m/progress.md"
+cat "docs/sdd/$m/progress.md" 2>/dev/null || echo "(none yet)"
+sec "plan files"
+found=0
+for f in docs/plans/"$m"*.md; do
+  [ -f "$f" ] || continue
+  found=1; echo "$f"
+  case "$f" in *.spec.md|*.impl.md) ;; *) awk '/^## Status/{p=1} p' "$f";; esac
+done
+[ "$found" = 1 ] || echo "(no plan files yet)"
+sec "STATUS row"
+grep -E "^\| \*{0,2}${m}[ *|]" docs/STATUS.md || echo "(no row)"
+sec "git  $wt"
+git status --short | awk 'NR<=20'
+git log --oneline -5
