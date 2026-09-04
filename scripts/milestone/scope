@@ -137,7 +137,7 @@ case "$role" in
       ledger=""
       for l in "docs/sdd/$slug/progress.md" "docs/sdd/$m/progress.md"; do [ -f "$l" ] && { ledger=$l; break; }; done
       done_tasks=""
-      [ -n "$ledger" ] && done_tasks=$(grep -oE 'Task [0-9]+: complete' "$ledger" | grep -oE '[0-9]+' | sort -un | tr '\n' ' ')
+      [ -n "$ledger" ] && done_tasks=$(grep -oE 'Task [0-9]+: complete' "$ledger" | grep -oE '[0-9]+' | sort -un | tr '\n' ' ' || true)
       all_tasks=$(awk '/^```/ { f = !f } !f && /^#+[ \t]+Task[ \t]+[0-9]+/ { match($0, /Task[ \t]+[0-9]+/); t = substr($0, RSTART, RLENGTH); sub(/Task[ \t]+/, "", t); print t }' "$impl" | sort -un)
       picked=()
       for t in $all_tasks; do
