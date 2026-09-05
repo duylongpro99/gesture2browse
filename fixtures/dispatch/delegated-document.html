@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>delegated-document</title>
+<button data-dispatch-target>delegated</button>
+<script>
+  // No listener on the element; the framework listens on document (delegation).
+  document.addEventListener('click', (e) => {
+    if (e.target.closest && e.target.closest('[data-dispatch-target]')) {
+      window.__dispatchOk = true;
+    }
+  });
+</script>

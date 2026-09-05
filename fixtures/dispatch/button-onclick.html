@@ -1,0 +1,8 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>button-onclick</title>
+<button data-dispatch-target>Click me</button>
+<script>
+  document.querySelector('[data-dispatch-target]')
+    .addEventListener('click', () => { window.__dispatchOk = true; });
+</script>

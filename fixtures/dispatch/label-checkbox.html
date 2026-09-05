@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>label-checkbox</title>
+<label data-dispatch-target><input type="checkbox"> toggle me</label>
+<script>
+  // Clicking the label activates the associated control (a default action).
+  document.querySelector('input[type=checkbox]')
+    .addEventListener('change', () => { window.__dispatchOk = true; });
+</script>

@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>pointerdown-handler</title>
+<button data-dispatch-target>pointerdown only</button>
+<script>
+  // Canvas/drag UIs act on pointerdown, never seeing a synthesized click.
+  document.querySelector('[data-dispatch-target]')
+    .addEventListener('pointerdown', () => { window.__dispatchOk = true; });
+</script>

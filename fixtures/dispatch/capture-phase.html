@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>capture-phase</title>
+<button data-dispatch-target>capture</button>
+<script>
+  document.addEventListener('click', (e) => {
+    if (e.target.closest && e.target.closest('[data-dispatch-target]')) {
+      window.__dispatchOk = true;
+    }
+  }, true /* capture phase */);
+</script>

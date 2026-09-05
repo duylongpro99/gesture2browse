@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>canvas-hittest</title>
+<canvas data-dispatch-target width="200" height="100" style="border:1px solid #999"></canvas>
+<script>
+  const canvas = document.querySelector('[data-dispatch-target]');
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#48c';
+  ctx.fillRect(60, 30, 80, 40); // the only "hot" region
+  canvas.addEventListener('click', (e) => {
+    const r = canvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    if (x >= 60 && x <= 140 && y >= 30 && y <= 70) { window.__dispatchOk = true; }
+  });
+</script>
