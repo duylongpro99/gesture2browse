@@ -101,9 +101,17 @@ _Owned by the 0A session; rewritten, not appended._
 - Also folded in the **session-3 scaffolding follow-up**: root `package.json` now declares `@gesture/protocol` and `@gesture/gesture-core` as `workspace:*` devDependencies so `scripts/fixtures/*.ts` resolve the workspace packages from the repo root (in scope this session because Task 7 owns root `package.json`).
 - Exit check (`--fast`): **all 6 PASS** (E1/E2/E3/I1/I2/I3), lock OK at 31a1383.
 
-**In progress:** none. **All 8 execute tasks are done; the execute phase is complete (handoff outcome DONE).**
+**Done (session 6, finish — verification complete):**
+- §5 commands green in the worktree (`pnpm typecheck`, `pnpm lint` incl. `boundary-lint: OK`, `pnpm test`).
+- **E1 as a real clean-clone** (fresh `git clone` of branch `0A` into `$TMPDIR`, no `--fast`): `pnpm install --frozen-lockfile && pnpm build && pnpm test` all green (gesture-core 13/13 incl. roundtrip; build 5/5 tasks).
+- `scripts/milestone/exit-check 0A` (full; clones for the clean-clone row): **`6 PASS 0 FAIL 0 OWNER 0 other | agree 0 disagree 0 at-risk 0 missing 0 unmatched 0 | lock OK`** (frozen at 31a1383). E1/E2/E3/I1/I2/I3 all PASS.
+- Branch pushed to `origin/0A`; **CI green** — run 33941532286 conclusion `success` on headSha fed708b (`https://github.com/duylongpro99/gesture2browse/actions/runs/33941532286`).
 
-**Next:** the `finish` phase — run E1 as a real clean-clone **without `--fast`** (`pnpm install --frozen-lockfile && pnpm build && pnpm test` from a fresh checkout), confirm CI is green on the branch, and integrate per `obra-finishing-a-development-branch`. The owner logs the roadmap §8 proposed decisions below.
+**In progress:** none. Verification is complete; the only remaining step is opening the PR to `master`.
+
+**Blocked (opening the PR — owner action):** `gh pr create --base master --head 0A` fails with `GraphQL: must be a collaborator (createPullRequest)`. The authenticated gh account is `longduydao99`; the repo is `duylongpro99/gesture2browse`. Opening a PR requires collaborator access this session's account lacks. Not a failing check and not fixable from the finish role (no code paths in scope) — handed off `NEEDS-OWNER`.
+
+**Next:** owner grants collaborator access to `longduydao99` (or switches gh to the `duylongpro99` account), then a finish session runs `gh pr create --base master --head 0A`; or the owner opens the PR directly at `https://github.com/duylongpro99/gesture2browse/pull/new/0A`. Everything else for 0A is green. The owner then logs the roadmap §8 proposed decisions below.
 
 **Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):**
 - 0A fixes three interfaces for 0B/0D/1A: `FixtureRecord` (raw MediaPipe landmarks, `gesture-fixture/v0`), `GestureFrame` v0, bench CSV `BENCH_COLUMNS`. `Intent` v0 is provisional and finalized by 1A.
