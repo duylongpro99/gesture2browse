@@ -77,12 +77,12 @@ Does **not** touch `GestureFrame` v0, `FixtureRecord`, `Intent`, or `BENCH_COLUM
 
 ## Exit checks
 
-Not frozen by this docs-only session (the lock `docs/sdd/0B/exit-checks.lock` is out of scope; the implementing/driver session freezes once the commands run). Criterion cells are verbatim: E1 from the roadmap row's **Exit** cell, V1 from its **Agent verification** cell.
+Not frozen by this docs-only session (the lock `docs/sdd/0B/exit-checks.lock` is out of scope; the implementing/driver session freezes once the commands run). Criterion cells are verbatim: E1 from the roadmap row's **Exit** cell, E2 from its **Agent verification** cell.
 
 | # | Criterion (verbatim) | Kind | Check |
 |---|---|---|---|
 | E1 | Owner's 10-minute run logged in `spike-results.md` | owner | - |
-| V1 | Playwright, fake camera, doc hidden, asserts ≥ 28 fps for 60 s | mechanical | `pnpm exec playwright test -c apps/extension/playwright.config.ts` |
+| E2 | Playwright, fake camera, doc hidden, asserts ≥ 28 fps for 60 s | mechanical | `pnpm exec playwright test -c apps/extension/playwright.config.ts` |
 
 ## Status
 
