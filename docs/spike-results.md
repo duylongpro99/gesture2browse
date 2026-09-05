@@ -15,9 +15,18 @@ Leave a gate's fields blank until it is run. Do not delete a gate — a gate tha
 
 **Setup:**
 
+Agent side (E2, `apps/extension/test/frame-pump.e2e.ts`): built unpacked extension loaded in a persistent Chromium context (`channel: 'chromium'`, `headless: true`) with `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream --use-file-for-fake-video-capture=fixtures/bench/placeholder.y4m` (64×64, F30:1, looped — the fake camera caps delivery at 30 fps). Pipeline: offscreen `getUserMedia` → `MediaStreamTrackProcessor` → transferred `ReadableStream<VideoFrame>` → module Worker → MediaPipe `HandLandmarker.detectForVideo` (VIDEO mode, `numHands:1`) on an `OffscreenCanvas`. `fps-logger` samples a 2 s rolling window; `background.ts` writes the `PumpStat` series to `chrome.storage.session`. 8 s warm-up discarded, then a 60 s measurement window. No foreground surface open (only `about:blank`). Command: `pnpm exec playwright test -c apps/extension/playwright.config.ts`.
+
+Machine: agent CI sandbox (darwin). Owner's 10-min M1 run is E1 below (still to run).
+
 **Result (numbers):**
 
-**Gate met? (Y/N):**
+- **Delegate:** WebGL (GPU) — initialised successfully in headless Chromium; no fallback to WASM.
+- **60 s window:** 30 windows × 2 s. **mean 30.2 fps, p05 30.0 fps, min 30.0 fps** — pinned at the fake-camera's 30 fps cap, no dropped windows. Threshold is ≥ 28 fps.
+- **No rAF/timer dependence:** the built offscreen chunk and worker bundle contain zero `requestAnimationFrame` (asserted by E2); the pump is driven only by the stream reader.
+- **`hidden` flag:** `[false]` for every window. **Finding:** Chrome reports `document.hidden === false` for an offscreen document (it is never a backgrounded tab), so the plan's "must be true" premise does not hold for the offscreen container. The offscreen document is nonetheless structurally non-rendered and no visible surface drove the pump (E2 asserts only `about:blank` is open). E2 therefore records `hidden` verbatim and proves the two testable halves of the gate — no rAF, and sustained rate with no foreground surface — rather than asserting `hidden === true`. Owner decision pending (handoff owner-question 1).
+
+**Gate met? (Y/N):** Agent side (E2) **Y** (30.0 fps p05 ≥ 28, no rAF). Full gate pending the owner's 10-minute M1 run (E1) and confirmation of the `hidden` interpretation.
 
 ---
 
