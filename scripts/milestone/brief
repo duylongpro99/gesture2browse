@@ -47,7 +47,8 @@ section=$(awk -v m="$m" '
 [ -n "$section" ] || { echo "WARN=no roadmap heading names $m; <section> left in the brief for the driver to fill" >&2; section="<section>"; }
 
 # Fenced block under a heading in the reference.
-block() { awk -v h="$1" '$0 == h {p=1; next} p && /^```/ { if (f) exit; f=1; next } p && f' "$ref"; }
+# Heading may carry a suffix: "## Role `probe` (gate milestones 0B–0E)".
+block() { awk -v h="$1" '!p && index($0, h) == 1 && (length($0) == length(h) || substr($0, length(h) + 1, 1) == " ") {p=1; next} p && /^```/ { if (f) exit; f=1; next } p && f' "$ref"; }
 header=$(block "## Common header")
 body=$(block "## Role \`$role\`")
 [ -n "$header" ] && [ -n "$body" ] || { echo "template lacks '## Common header' or '## Role \`$role\`' in $ref" >&2; exit 4; }
