@@ -6,6 +6,7 @@ import {
   BenchRowSchema,
   BENCH_COLUMNS,
   GestureLabel,
+  PumpStatSchema,
 } from '@gesture/protocol';
 
 describe('GestureFrame v0', () => {
@@ -82,4 +83,25 @@ describe('Bench schema', () => {
 
 it('GestureLabel includes the mandatory none class', () => {
   expect(GestureLabel.options).toContain('none');
+});
+
+describe('PumpStat (G1 frame-pump telemetry)', () => {
+  const sample = {
+    ts: 12_345,
+    fps: 29.7,
+    frames: 891,
+    windowMs: 30_000,
+    delegate: 'webgl',
+    hidden: true,
+  };
+  it('accepts a valid sample', () => {
+    expect(PumpStatSchema.parse(sample).fps).toBe(29.7);
+  });
+  it('rejects a bad delegate', () => {
+    expect(() => PumpStatSchema.parse({ ...sample, delegate: 'GPU' })).toThrow();
+  });
+  it('rejects a missing field', () => {
+    const { hidden: _omit, ...missing } = sample;
+    expect(() => PumpStatSchema.parse(missing)).toThrow();
+  });
 });
