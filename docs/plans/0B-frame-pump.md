@@ -57,29 +57,23 @@ Does **not** touch `GestureFrame` v0, `FixtureRecord`, `Intent`, or `BENCH_COLUM
 
 ## Files
 
-**Create**
-- `apps/extension/entrypoints/offscreen/fps-logger.ts` — pure rolling-window fps accumulator.
-- `apps/extension/entrypoints/offscreen/mediapipe.ts` — `FilesetResolver` + `HandLandmarker` init from local `web_accessible_resources`, delegate selection (GPU→CPU fallback).
-- `packages/protocol/src/pump.ts` — `PumpStat` Zod schema + type.
-- `apps/extension/playwright.config.ts` — extension e2e config (persistent context, `--load-extension`, fake-camera flags, y4m from `fixtures/bench/`).
-- `apps/extension/test/frame-pump.e2e.ts` — the ≥ 28 fps / 60 s hidden-doc gate (agent verification).
-- `apps/extension/test/fps-logger.test.ts` — fps-logger unit test.
-- `apps/extension/public/models/.gitkeep` — keep the assets dir; model/wasm are copied at build, not committed.
-
-**Modify**
-- `apps/extension/entrypoints/offscreen/main.ts` — `getUserMedia` → `MediaStreamTrackProcessor` → transfer `ReadableStream` + config to the Worker; receive `PumpStat` samples; `chrome.runtime.sendMessage` them to the SW.
-- `apps/extension/entrypoints/offscreen/inference.worker.ts` — consume the transferred `ReadableStream`, draw each `VideoFrame` to `OffscreenCanvas`, `HandLandmarker.detectForVideo`, feed `fps-logger`, post `PumpStat`. No `rAF`.
-- `apps/extension/entrypoints/background.ts` — `chrome.offscreen.createDocument` (reason `USER_MEDIA`); `onMessage` validates `PumpStat` via the protocol schema, writes the latest sample + rolling series to `chrome.storage.session`.
-- `apps/extension/wxt.config.ts` — build hook copying the root `hand_landmarker.task` and `@mediapipe/tasks-vision` WASM into the build; `web_accessible_resources` for `/models`, `/wasm`.
-- `apps/extension/package.json` — add `@mediapipe/tasks-vision` (dep) and `@playwright/test` (devDep).
-- `packages/protocol/src/index.ts` — export `PumpStat`.
-- `packages/protocol/test/schemas.test.ts` — add the `PumpStat` schema cases (or a sibling `pump.test.ts`).
-- `docs/spike-results.md` — fill **G1** Setup / Result (numbers) / Gate met.
-- `pnpm-lock.yaml` — from the two new dependencies.
-
-**Test** — `apps/extension/test/frame-pump.e2e.ts`, `apps/extension/test/fps-logger.test.ts`, the `PumpStat` cases in `packages/protocol/test/`.
-
-New runtime dependency: `@mediapipe/tasks-vision` is already listed in `docs/03-tech-stack.md` (used by the playground bench in 0A); no new tech-stack row is needed. `@playwright/test` is dev-only and already in the stack.
+**Files:**
+- Create `apps/extension/entrypoints/offscreen/fps-logger.ts` — pure rolling-window fps accumulator.
+- Create `apps/extension/entrypoints/offscreen/mediapipe.ts` — FilesetResolver + HandLandmarker init from local web_accessible_resources, delegate selection (GPU→CPU fallback).
+- Create `packages/protocol/src/pump.ts` — PumpStat Zod schema + type.
+- Create `apps/extension/playwright.config.ts` — extension e2e config (persistent context, --load-extension, fake-camera flags, y4m from fixtures/bench/).
+- Create `apps/extension/public/models/.gitkeep` — keep the assets dir; model/wasm are copied at build, not committed.
+- Modify `apps/extension/entrypoints/offscreen/main.ts` — getUserMedia → MediaStreamTrackProcessor → transfer ReadableStream + config to the Worker; receive PumpStat samples; chrome.runtime.sendMessage them to the SW.
+- Modify `apps/extension/entrypoints/offscreen/inference.worker.ts` — consume the transferred ReadableStream, draw each VideoFrame to OffscreenCanvas, HandLandmarker.detectForVideo, feed fps-logger, post PumpStat. No rAF.
+- Modify `apps/extension/entrypoints/background.ts` — chrome.offscreen.createDocument (reason USER_MEDIA); onMessage validates PumpStat via the protocol schema, writes the latest sample + rolling series to chrome.storage.session.
+- Modify `apps/extension/wxt.config.ts` — build hook copying the root hand_landmarker.task and @mediapipe/tasks-vision WASM into the build; web_accessible_resources for /models, /wasm.
+- Modify `apps/extension/package.json` — add @mediapipe/tasks-vision (dep) and @playwright/test (devDep); both already in docs/03-tech-stack.md, no new tech-stack row.
+- Modify `packages/protocol/src/index.ts` — export PumpStat.
+- Modify `docs/spike-results.md` — fill G1 Setup / Result (numbers) / Gate met.
+- Modify `pnpm-lock.yaml` — from the two new dependencies.
+- Test `apps/extension/test/frame-pump.e2e.ts` — the ≥ 28 fps / 60 s hidden-doc gate (agent verification).
+- Test `apps/extension/test/fps-logger.test.ts` — fps-logger unit test.
+- Test `packages/protocol/test/schemas.test.ts` — add the PumpStat schema cases (or a sibling pump.test.ts).
 
 ## Exit checks
 
