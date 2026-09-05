@@ -103,10 +103,11 @@ _Owned by the 0C session; rewritten, not appended._
 
 **Spike finding (resolves plan §2 open question):** the MV3 **service worker _can_ answer `navigator.permissions.query({name:'camera'})`** in this Chromium build (E2 `queryAnswered: true`, `source: 'sw-query'`). The background gate queries directly; the last-`CameraGrantStatus` `storage.session` fallback is retained for any build/context where the SW query throws.
 
-**In progress / next:** owner **E1** — grant from a real full tab, restart Chrome, confirm offscreen `getUserMedia` succeeds with no prompt; then test Chrome's "Allow this time" and confirm it is detected (not mistaken for persistent). Steps are in `docs/sdd/0C/handoff.md`. After E1 lands in `spike-results.md §G2`, the finish session proposes the §8 G2 go/no-go.
+**Owner E1 (2026-09-05) — DONE, PASS.** Recorded in `spike-results.md §G2`: E1a restart survival PASS (persistent grant survived a full Chrome quit/reopen; offscreen `getUserMedia` ran with no prompt, `cameraPrecheck.state === 'granted'`), E1b "Allow this time" detection PASS (temporary grant not mistaken for persistent; warning shown, `persistent === false`). **Owner approved G2 = GO.** Gate met = Y (E2 agent + E1 owner). Milestone complete.
 
-**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** none yet — G2 go/no-go is entered after E1 (owner) joins E2 (agent) in `spike-results.md §G2`. Candidate wording once E1 passes: "G2 met: full-tab grant persists across restart; SW `permissions.query` gate; 'Allow this time' detected."
+**Proposed decision for roadmap §8 (owner logs; agent does not edit §8):**
+> | 2026-09-05 | **G2 (0C) camera grant = GO.** Full-tab grant page moves the extension origin to a persistent camera grant that the offscreen document inherits across a Chrome restart with no prompt; a `background.ts` `navigator.permissions.query` pre-check gates every offscreen start and routes to the grant page when not granted; Chrome's "Allow this time" is detected (cross-session, `persistent:false`), not mistaken for a persistent grant. Finding: the MV3 service worker **can** answer `permissions.query({name:'camera'})` (direct SW query; stored-`CameraGrantStatus` fallback retained). Consumed by 1D.1 onboarding. | G2 (0C): E2 Playwright (pre-granted) + E1 owner restart/"Allow this time" | Recorded in `spike-results.md §G2` |
 
-**Blockers:** owner E1 (Chrome-restart + "Allow this time"), surfaced as `NEEDS-OWNER`.
+**Blockers:** none — E1/E1b PASS, owner GO. Handoff `DONE`.
 
 **Superpowers conflicts noted (`CLAUDE.md §6`):** none.

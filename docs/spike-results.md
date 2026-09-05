@@ -44,7 +44,7 @@ _E1 (owner, 10 min on M1):_ **30.5 fps sustained** over the 10-minute run, above
 
 _E2 — agent side_ (`apps/extension/test/camera-grant.e2e.ts`, milestone 0C): built unpacked extension loaded in a persistent Chromium context (`channel: 'chromium'`, `headless: true`) with `--use-fake-device-for-media-stream --use-file-for-fake-video-capture=fixtures/bench/placeholder.y4m` and, crucially, **without** `--use-fake-ui-for-media-stream`. The camera is instead **pre-granted to the extension origin** via `context.grantPermissions(['camera'])`, so the flow is proved from a real origin grant rather than an auto-accepted prompt. Flow: the full-tab grant page (`grant-camera.html`) runs `navigator.permissions.query({name:'camera'})` as a pre-check, calls `getUserMedia({video:true})`, stops every track immediately (no video rendered/retained — asserted: zero `<video>`/`<canvas>` on the page), re-queries, derives the verdict with the pure helper, and writes `CameraGrantStatus` to `chrome.storage.session` + `cameraGrantSeen` to `chrome.storage.local`. The background pre-check gate (`background.ts`) then re-runs on demand (`RunCameraPrecheck`). Command: `pnpm exec playwright test -c apps/extension/playwright.config.ts camera-grant.e2e.ts`. Unit coverage: `apps/extension/test/permission.test.ts` (pure persistence/"Allow this time" derivation) and the `CameraGrantStatus` schema in `packages/protocol/test/schemas.test.ts`. Machine: agent CI sandbox (darwin).
 
-_E1 — owner run_ (**pending**): the Chrome-restart survival and the live "Allow this time" revert are outside Playwright (a real browser restart, a human clicking a real permission chip). Steps for the owner are in the 0C handoff / below.
+_E1 — owner run_ (2026-09-05): the Chrome-restart survival and the live "Allow this time" revert are outside Playwright (a real browser restart, a human clicking a real permission chip). Build & load from the **0C worktree**, `pnpm --filter @gesture/extension build` in `.worktrees/0C` → chrome://extensions → Load unpacked `apps/extension/.output/chrome-mv3`; open `chrome-extension://<id>/grant-camera.html`. **Reproducibility note:** the build MUST run in `.worktrees/0C`, not the root checkout — the root is on `master`, which has no `packages/protocol` `dist` and only the 0A `grant-camera` stub, so `pnpm --filter @gesture/extension build` fails there (this is what tripped the owner's first attempt). E1a: choose "Allow on every visit", quit Chrome fully, reopen. E1b: reset the origin's camera permission, choose "Allow this time", quit and reopen.
 
 **Result (numbers):**
 
@@ -56,9 +56,11 @@ _E2 (agent):_
 - **"Allow this time" detection** (pure helper, `permission.test.ts`, 6 cases green): `granted` + seen → `persistent: true`; `prompt`/`denied` + seen → `persistent: false` + "Allow this time" suspected; `granted` + unseen → first grant. The detection is a cross-session inference and so is only observable across a restart — which is exactly E1 (owner).
 - No regression: G1 `frame-pump.e2e.ts` still green with the gate in front of `ensureOffscreen()` (full 60 s window, p05 30.0 fps).
 
-_E1 (owner):_ _(pending — fill after the restart check below.)_
+_E1 (owner, 2026-09-05):_
+- **E1a restart survival — PASS.** After "Allow on every visit" and a full Chrome quit + reopen, the offscreen frame pump ran with **no camera prompt**; the service worker's `chrome.storage.session` showed `cameraPrecheck.state === 'granted'` and a live `pumpLatest`/`pumpSeries` with no `pumpError`. The persistent grant survived the restart.
+- **E1b "Allow this time" detection — PASS.** After granting "Allow this time" then quitting + reopening Chrome, the grant page's pre-check read not-granted while `cameraGrantSeen` was set, so the temporary grant was **NOT mistaken for persistent**: the "Allow this time" warning was shown and `CameraGrantStatus.persistent === false`.
 
-**Gate met? (Y/N):** **E2 (agent) Y** — grant→persistent status→gated offscreen `getUserMedia` with no prompt, "Allow this time" detected in unit tests. **E1 (owner) pending** — Chrome-restart survival + live "Allow this time" revert not yet run; the gate is not fully signed until E1 is recorded.
+**Gate met? (Y/N):** **Y.** E2 (agent) Y — grant→persistent `CameraGrantStatus`→gated offscreen `getUserMedia` with no prompt, "Allow this time" detected in unit tests, SW can `permissions.query`. E1 (owner) Y — E1a restart survival PASS and E1b "Allow this time" detection PASS. **Owner approved G2 = GO (2026-09-05).**
 
 ---
 
@@ -151,7 +153,7 @@ _E1 (owner):_ _(pending — fill after the restart check below.)_
 | Gate | Met? (Y/N) | Evidence (section above / file) |
 |---|---|---|
 | G1 Frame pump | Y | §G1 above — E2 30.0 fps p05 (WebGL, no rAF); E1 owner M1 30.5 fps / 10 min |
-| G2 Camera flow | E2 Y; E1 pending | §G2 above — E2 (agent) grant→persistent `CameraGrantStatus`→gated offscreen `getUserMedia`, no prompt; SW can `permissions.query`. E1 (owner Chrome-restart) pending |
+| G2 Camera flow | Y | §G2 above — E2 (agent) grant→persistent `CameraGrantStatus`→gated offscreen `getUserMedia`, no prompt, SW can `permissions.query`; E1 (owner) restart survival + "Allow this time" detection both PASS. Owner approved GO 2026-09-05 |
 | G3 Bench matrix | | |
 | G4 Precision/recall | | |
 | G5 Dispatch survey | | |
