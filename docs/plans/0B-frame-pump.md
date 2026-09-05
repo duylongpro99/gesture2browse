@@ -102,12 +102,14 @@ _Owned by the 0B session; rewritten, not appended._
 
 **Notable choices:** WXT's esbuild left `new Worker(new URL(...))` untransformed (worker not bundled) → switched to Vite's `?worker` import, which emits the worker chunk with MediaPipe. `browser.runtime.getURL` is path-typed to `PublicPath`; build-injected `/wasm` and `/models` are derived from the `/` origin.
 
-**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):**
-- **G1 = GO on the browser frame-pump path.** The offscreen `MediaStreamTrackProcessor` → Worker → MediaPipe pump sustains **30.0 fps p05 over 60 s** (WebGL delegate, `numHands:1`, no `rAF`/timer dependence) — well above the ≥ 28 fps threshold — with no visible surface driving it. This is the agent-side (E2) result; the owner's 10-minute M1 run (E1) is the confirming datapoint. Feeds the G8 browser-inference vs ONNX-Web go/no-go.
+**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8) — FINAL, both datapoints in:**
+- **G1 = GO on the browser frame-pump path.** The offscreen `MediaStreamTrackProcessor` → Worker → MediaPipe pump clears the ≥ 28 fps threshold with no `rAF`/timer dependence and no visible surface driving it: **E2 (agent) 30.0 fps p05 over 60 s** (WebGL, `numHands:1`), **E1 (owner M1) 30.5 fps sustained over 10 min**. Both logged in `spike-results.md §G1`; the go/no-go table G1 row is Y. Feeds the G8 browser-inference vs ONNX-Web decision.
 - **`document.hidden` platform note for §8/tech-stack:** offscreen documents report `document.hidden === false`; "hidden" for this container means "never-rendered, no visible surface", which the offscreen doc satisfies structurally. Owner accepted reading A.
 
-**Exit checks:** the driver refroze the lock at `14f62d9` (E1 owner + E2 mechanical; `frozen-at 14f62d9`, table hash recorded). Commit `506d725` (V1→E2 rename) accepted as-is. E2 command unchanged and green.
+**Follow-ups surfaced for other milestones (not 0B's to fix):**
+- **0C / G2 camera grant:** `grant-camera.html` is still the 0A stub and an offscreen document cannot prompt, so E1 needed a manual grant workaround (open `grant-camera.html`, call `getUserMedia` in DevTools, Allow-not-this-time, reload). Recorded under `spike-results.md §G1` E1 as a 0C input.
+- **spike-results §G2:** the owner's `30.5` fps landed in the G2 *Result* cell (an fps value unrelated to the camera-flow gate) — looks misplaced; left untouched per "do not change the owner's number". Owner may want to clear it. The G1 E1 block was completed from the owner's report.
 
-**Blockers:** only E1 (owner's 10-minute hidden-doc run on the M1) remains — owner is running it and pastes the numbers into `spike-results.md §G1` themselves. DONE follows their confirmation.
+**Exit checks:** the driver refroze the lock at `14f62d9` (E1 owner + E2 mechanical). Commit `506d725` (V1→E2 rename) accepted as-is. E2 green via `exit-check 0B --fast` (PASS/AGREE); E1 met (owner logged 30.5 fps).
 
 **Superpowers conflicts noted (`CLAUDE.md §6`):** none.
