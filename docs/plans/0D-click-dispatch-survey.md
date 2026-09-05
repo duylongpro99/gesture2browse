@@ -111,11 +111,13 @@ _Owned by the 0D session; rewritten, not appended._
 - `pnpm exec playwright test … click-dispatch-survey.e2e.ts` → PASS; `scripts/milestone/exit-check 0D --fast` → E3 PASS, lock OK; Vitest 10/10; eslint + boundary-lint clean; `tsc` clean.
 - **`playwright.config.ts` unchanged:** its existing `testMatch: '**/*.e2e.ts'` already registers the survey (the exit-check invokes the file by name); no project/testMatch edit was needed, so the plan's "Modify" is a no-op here.
 
-**In progress:** none. **Awaiting owner:** E1 (live run + spot-check) and E2 (§8 default).
+**Done (session 1, live run — owner-directed):** ran `SURVEY_LIVE=1` (E1). Sandbox network is partial (`openstreetmap` `ERR_CONNECTION_REFUSED`, `mdn-select` selector not yielded), so the live numbers are confounded and do **not** override the mechanism-isolating local survey — recorded verbatim in `spike-results.md §G5` as a labeled live-run subsection with the sites the owner should spot-check on a real machine (`openstreetmap`, `mdn-select`, `wikipedia-anchor`/CDP). **E1 not self-marked met** — the owner re-runs on a networked machine and spot-checks.
 
-**Next:** owner runs `SURVEY_LIVE=1 pnpm exec playwright test -c apps/playground/playwright.config.ts click-dispatch-survey.e2e.ts`, spot-checks 5 reported-failure sites (E1), then confirms the dispatch default and enters it in roadmap §8 + `03-tech-stack §4` (E2). On confirmation, a follow-up session records the proposed §8 decision here and hands off DONE.
+**In progress:** none. **Awaiting owner:** E1 (real-machine spot-check of the listed live-failure sites) and E2 (§8 row logged post-merge).
 
-**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** **click-dispatch default = CDP** (trusted `Input.dispatchMouseEvent`), with *synthetic-first + CDP-escalation* as the owner's alternative. Basis: 4/15 local sites are only reachable via the trusted path (and, live, the activation-gated `window.open`/`target=_blank` cases), so a synthetic default silently fails on hostile pages; `native-select` needs keyboard regardless. Feeds 1A (dispatch default path) and 1C (dispatcher, CDP opt-in shape). Pending the owner's E1 confirmation.
+**Next:** owner spot-checks the live-failure sites listed in §G5 on a networked machine (E1), then logs the §8 row and enters the number in `03-tech-stack §4` post-merge (E2, owner-only). On E1 completion the milestone exits DONE.
+
+**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** **click-dispatch default = CDP** (trusted `Input.dispatchMouseEvent`) — **owner-confirmed 2026-09-05**, with *synthetic-first + CDP-escalation* as the noted alternative. Basis: 4/15 local sites are only reachable via the trusted path (and, live, the activation-gated `window.open`/`target=_blank` cases), so a synthetic default silently fails on hostile pages; `native-select` needs keyboard regardless. Feeds 1A (dispatch default path) and 1C (dispatcher, CDP opt-in shape). Owner logs the §8 row and `03-tech-stack §4` number post-merge.
 
 **Blockers:** owner laptop/live-site access for the E1 spot-check (roadmap §3.3 G5); not a blocker for the agent's local-fixture survey, which is complete and green.
 
