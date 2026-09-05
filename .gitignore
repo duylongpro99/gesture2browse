@@ -19,3 +19,5 @@ dist/
 .output/
 .turbo/
 test-results/
+
+.turbo/cache
