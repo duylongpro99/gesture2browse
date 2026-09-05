@@ -1,0 +1,8 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>same-origin-iframe-child</title>
+<button data-dispatch-target>child button</button>
+<script>
+  document.querySelector('[data-dispatch-target]')
+    .addEventListener('click', () => { parent.postMessage('dispatch-ok', '*'); });
+</script>

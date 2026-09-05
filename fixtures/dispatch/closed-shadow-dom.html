@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>closed-shadow-dom</title>
+<!-- inline-block so the host box wraps the inner button: a coordinate click at
+     the host centre lands on the (unreachable-by-selector) shadow child. -->
+<div data-dispatch-host style="display:inline-block"></div>
+<script>
+  // A closed shadow root: outside JS cannot querySelector the inner button, so a
+  // synthetic dispatch on the host misses it; a trusted click at the host's
+  // coordinates hit-tests (and retargets to) the real inner element.
+  const host = document.querySelector('[data-dispatch-host]');
+  const root = host.attachShadow({ mode: 'closed' });
+  const btn = document.createElement('button');
+  btn.textContent = 'shadow button';
+  root.appendChild(btn);
+  btn.addEventListener('click', () => { window.__dispatchOk = true; });
+</script>

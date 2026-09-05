@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>contenteditable</title>
+<div data-dispatch-target contenteditable>edit me — a click should focus and place a caret</div>
+<script>
+  // Success = the click's default action focuses the editable region.
+  document.querySelector('[data-dispatch-target]')
+    .addEventListener('focus', () => { window.__dispatchOk = true; });
+</script>

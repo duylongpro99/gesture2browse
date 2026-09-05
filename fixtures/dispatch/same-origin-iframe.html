@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>same-origin-iframe</title>
+<iframe src="./same-origin-iframe-child.html" width="200" height="80"></iframe>
+<script>
+  // The child (same origin) posts on success; the top frame owns the flag.
+  window.addEventListener('message', (e) => {
+    if (e.data === 'dispatch-ok') { window.__dispatchOk = true; }
+  });
+</script>
