@@ -7,6 +7,7 @@ import {
   BENCH_COLUMNS,
   GestureLabel,
   PumpStatSchema,
+  CameraGrantStatusSchema,
 } from '@gesture/protocol';
 
 describe('GestureFrame v0', () => {
@@ -103,5 +104,27 @@ describe('PumpStat (G1 frame-pump telemetry)', () => {
   it('rejects a missing field', () => {
     const { hidden: _omit, ...missing } = sample;
     expect(() => PumpStatSchema.parse(missing)).toThrow();
+  });
+});
+
+describe('CameraGrantStatus (G2 camera-grant join message)', () => {
+  const sample = {
+    ts: 1_725_000_000_000,
+    state: 'granted',
+    persistent: true,
+    source: 'grant-page',
+  };
+  it('accepts a valid record', () => {
+    expect(CameraGrantStatusSchema.parse(sample).state).toBe('granted');
+  });
+  it('rejects a bad state', () => {
+    expect(() => CameraGrantStatusSchema.parse({ ...sample, state: 'allow' })).toThrow();
+  });
+  it('rejects a bad source', () => {
+    expect(() => CameraGrantStatusSchema.parse({ ...sample, source: 'offscreen' })).toThrow();
+  });
+  it('rejects a missing field', () => {
+    const { persistent: _omit, ...missing } = sample;
+    expect(() => CameraGrantStatusSchema.parse(missing)).toThrow();
   });
 });
