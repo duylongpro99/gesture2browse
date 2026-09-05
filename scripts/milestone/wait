@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# Wait for the worker of a milestone to settle, surviving laptop sleep and
+# Herdr socket drops, and say what the settled state means. Optionally submit
+# a prompt first. The driver runs this in the background and acts on the
+# RESULT line only (SKILL.md step 4–5); it never polls with sleep.
+#
+# Usage: scripts/milestone/wait <MILESTONE-ID> [--brief | --answers TEXT | --nudge | --prompt TEXT]
+#                               [--deadline SECONDS]
+#   --brief         submit "Read docs/sdd/<M>/session-<N>-brief.md and follow it exactly."
+#   --answers TEXT  submit TEXT (the answers message from references/briefs.md)
+#   --nudge         after RESULT=disconnect: submit the resume-after-cut-off message
+#                   (at most WAIT_MAX_NUDGES, default 2, per session; refuses beyond)
+#   --prompt TEXT   submit any one-line message (handoff-format message, etc.)
+#   --deadline S    give up after S seconds of wall clock (default 5400, like the old --wait)
+#
+# Loop: `herdr agent wait <PANE> --until idle|blocked|done --timeout <chunk>`
+# (chunk WAIT_CHUNK_MS, default 600000). A `timeout` just loops; a transport
+# error (socket gone after sleep, server restarting) retries with backoff up to
+# WAIT_MAX_RETRIES (default 30); the pane disappearing is `gone`. While waiting,
+# `caffeinate -is` keeps macOS from idle-sleeping (a closed lid still sleeps).
+#
+# Prints one line the driver acts on, then detail lines:
+#   RESULT=handoff      handoff.md exists with `session: <N>`         → scripts/milestone/status
+#   RESULT=blocked      Claude Code dialog (permission, trust) in the pane → owner answers in the pane, wait again
+#   RESULT=disconnect   pane idle, no handoff, terminal shows a network/API error → `wait --nudge` once or twice
+#   RESULT=idle         pane idle, no handoff, no error text                → the old "missing" rule: read the pane, ask the owner
+#   RESULT=gone         pane/agent no longer exists                        → spawn afresh with a resume brief
+#   RESULT=deadline     still working after --deadline                     → owner decides (herdr agent read)
+#   RESULT=stalled      the prompt was submitted but the agent never started working → herdr agent read, owner
+# Every RESULT is also stored in driver.json (wait_result, step=gate).
+set -uo pipefail
+[ $# -ge 1 ] || { echo "usage: wait <MILESTONE-ID> [--brief|--answers TEXT|--nudge|--prompt TEXT] [--deadline S]" >&2; exit 2; }
+m=$1; shift
+here=$(cd "$(dirname "$0")" && pwd); ds="$here/driver-state"
+prompt=""; mode=""; deadline=${WAIT_DEADLINE:-5400}
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --brief) mode=brief; shift ;;
+    --answers) mode=answers; prompt=$2; shift 2 ;;
+    --nudge) mode=nudge; shift ;;
+    --prompt) mode=prompt; prompt=$2; shift 2 ;;
+    --deadline) deadline=$2; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+[ "${HERDR_ENV:-}" = 1 ] || { echo "not inside Herdr (HERDR_ENV!=1)" >&2; exit 1; }
+
+root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+wt="$(dirname "$root")/$(basename "$root")-$m"
+pane=$("$ds" "$m" get pane 2>/dev/null || true); n=$("$ds" "$m" get session 2>/dev/null || true)
+[ -n "$pane" ] && [ -n "$n" ] || { echo "driver.json has no pane/session for $m; run scripts/milestone/spawn first" >&2; exit 5; }
+slug=$("$ds" "$m" get slug 2>/dev/null || true); [ -n "$slug" ] || slug=$m
+handoff="$wt/docs/sdd/$m/handoff.md"
+chunk=${WAIT_CHUNK_MS:-600000}; max_retries=${WAIT_MAX_RETRIES:-30}; max_nudges=${WAIT_MAX_NUDGES:-2}
+
+finish() { # $1 result, rest = detail lines
+  local r=$1; shift
+  "$ds" "$m" set wait_result "$r" step gate wait_finished_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >/dev/null 2>&1 || true
+  echo "RESULT=$r"
+  for l in "$@"; do [ -n "$l" ] && echo "$l"; done
+  [ "$r" = handoff ] && exit 0 || exit 10
+}
+have_handoff() { [ -f "$handoff" ] && [ "$(sed -n 's/^session:[[:space:]]*//p' "$handoff" | head -1)" = "$n" ]; }
+agent_status() { herdr agent get "$pane" 2>/dev/null | jq -r '.result.agent.agent_status // .error.code // "unknown"'; }
+disconnect_re='Connection error|connection (lost|refused|reset)|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|socket hang up|network (error|is unreachable)|Request timed out|API Error|overloaded|Retrying in|status 5[0-9][0-9]|529|offline|Unable to connect|Failed to connect'
+
+case "$mode" in
+  brief) prompt="Read docs/sdd/$m/session-$n-brief.md and follow it exactly." ;;
+  nudge)
+    nudges=$("$ds" "$m" get nudges 2>/dev/null || echo 0); [ -n "$nudges" ] || nudges=0
+    [ "$nudges" -lt "$max_nudges" ] || { echo "RESULT=nudge-limit"; echo "already nudged $nudges times this session; ask the owner (herdr agent read $pane --lines 60)"; exit 10; }
+    prompt="Your previous turn was cut off (connection lost). Re-read docs/sdd/$m/session-$n-brief.md, check git status and docs/sdd/$slug/progress.md for what is already done, continue from there, and write docs/sdd/$m/handoff.md when you next stop."
+    "$ds" "$m" set nudges "$((nudges + 1))" >/dev/null ;;
+esac
+
+if [ -n "$prompt" ]; then
+  [ "$(agent_status)" != agent_not_found ] || finish gone "pane $pane not found before the prompt was sent"
+  out=$(herdr agent prompt "$pane" "$prompt" --wait --until working --timeout 8000 2>&1) || {
+    code=$(printf '%s' "$out" | jq -r '.error.code // empty' 2>/dev/null)
+    case "$code" in
+      agent_prompt_stalled|timeout) finish stalled "prompt submitted but the agent did not start working within 8s: herdr agent read $pane --lines 40" ;;
+      agent_not_found) finish gone "pane $pane not found" ;;
+      *) echo "prompt submission returned: $out (continuing to wait)" >&2 ;;
+    esac
+  }
+  "$ds" "$m" set step waiting last_prompt "$mode" prompt_sent_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >/dev/null 2>&1 || true
+fi
+
+"$ds" "$m" set step waiting >/dev/null 2>&1 || true
+caff=""; command -v caffeinate >/dev/null 2>&1 && caff="caffeinate -is"
+start=$(date +%s); retries=0
+while :; do
+  have_handoff && finish handoff "handoff: docs/sdd/$m/handoff.md (session $n)"
+  elapsed=$(( $(date +%s) - start )); left=$(( deadline - elapsed ))
+  [ "$left" -gt 0 ] || finish deadline "still not settled after ${deadline}s: herdr agent read $pane --lines 60"
+  ms=$(( left * 1000 )); [ "$ms" -lt "$chunk" ] || ms=$chunk
+  out=$($caff herdr agent wait "$pane" --until idle --until blocked --until done --timeout "$ms" 2>&1); rc=$?
+  code=$(printf '%s' "$out" | jq -r '.error.code // empty' 2>/dev/null)
+  if [ "$rc" = 0 ]; then
+    st=$(printf '%s' "$out" | jq -r '.result.agent.agent_status // .result.status // .result.agent_status // "settled"' 2>/dev/null)
+    sleep 2  # let a handoff written in the last tool call land on disk
+    have_handoff && finish handoff "handoff: docs/sdd/$m/handoff.md (session $n)"
+    case "$st" in
+      blocked) finish blocked "Claude Code dialog in pane $pane: herdr agent read $pane --lines 40; the owner answers it (herdr agent focus $pane), then wait again" ;;
+    esac
+    tail=$(herdr agent read "$pane" --lines 60 --format text 2>/dev/null || true)
+    if printf '%s' "$tail" | grep -Eiq "$disconnect_re"; then
+      finish disconnect "pane idle, no handoff, terminal shows:" "$(printf '%s' "$tail" | grep -Ei "$disconnect_re" | tail -3 | sed 's/^/  | /')" "→ scripts/milestone/wait $m --nudge"
+    fi
+    finish idle "pane idle with no session-$n handoff and no error text; herdr agent read $pane --lines 60, report to the owner, never infer an outcome"
+  fi
+  case "$code" in
+    timeout) retries=0; continue ;;
+    agent_not_found) finish gone "pane $pane no longer exists" ;;
+    *)
+      retries=$((retries + 1))
+      [ "$retries" -le "$max_retries" ] || finish transport "herdr unreachable after $retries retries: $out"
+      echo "transport error (retry $retries/$max_retries): ${out:-exit $rc}" >&2
+      sleep $(( retries < 6 ? retries * 5 : 30 )) ;;
+  esac
+done

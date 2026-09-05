@@ -1,32 +1,42 @@
 #!/usr/bin/env bash
-# Everything the driver reads between worker sessions, in one call:
-# handoff, SDD ledger, plan files and their ## Status, STATUS row, worktree git
-# state, and the mechanical scope check: what the session actually changed since
-# the base SHA spawn recorded, classified against the scope it was given.
+# Everything the driver reads between worker sessions, in one call, but terse:
+# the driver sees a VERDICT block, the handoff verbatim, and the lines it acts
+# on; the full dump (ledger, plan ## Status, git, exit-check table, scope diff,
+# commit checks) goes to docs/sdd/<M>/status-<N>.txt (gitignored) and is read
+# only when a verdict line says so. This keeps the driver's per-gate context
+# cost small and constant (driving-a-milestone, issue: driver context growth).
+#
 # Lines the driver acts on (SKILL.md step 5): `OUT-OF-SCOPE: <path>`,
-# `COMMIT-CHECK: <commit> <problem>`, `SESSION-MISMATCH: ...`, `HISTORY: ...`.
-# Then the exit-check report (frozen ## Exit checks vs the worker's exit-progress).
-# Usage: scripts/milestone/status <MILESTONE-ID>        STATUS_NO_CHECKS=1 skips exit-check
+# `COMMIT-CHECK: <commit> <problem>`, `SESSION-MISMATCH: ...`, `HISTORY: ...`,
+# the exit-check `summary:` / `lock:` lines and any AT-RISK / DISAGREE /
+# OWNER-CLAIM / MISSING / UNMATCHED / TAMPERED row, `WARN:` lines.
+#
+# Usage: scripts/milestone/status <MILESTONE-ID> [--full]     STATUS_NO_CHECKS=1 skips exit-check
+#   --full  print the whole dump instead of the verdict (what this script printed before)
 set -euo pipefail
-[ $# -eq 1 ] || { echo "usage: status <MILESTONE-ID>" >&2; exit 2; }
-m=$1
-here=$(cd "$(dirname "$0")" && pwd)
+[ $# -ge 1 ] || { echo "usage: status <MILESTONE-ID> [--full]" >&2; exit 2; }
+m=$1; shift; full=0
+for a in "$@"; do case "$a" in --full) full=1 ;; *) echo "unknown flag $a" >&2; exit 2 ;; esac; done
+here=$(cd "$(dirname "$0")" && pwd); ds="$here/driver-state"
 root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 wt="$(dirname "$root")/$(basename "$root")-$m"
 [ -d "$wt" ] || { echo "no worktree at $wt" >&2; exit 3; }
 cd "$wt"
 sec() { printf '\n===== %s\n' "$1"; }
-sec "handoff  docs/sdd/$m/handoff.md"
-cat "docs/sdd/$m/handoff.md" 2>/dev/null || echo "(none: this session wrote no handoff)"
-if [ -f .claude/scope.json ] && [ -f "docs/sdd/$m/handoff.md" ]; then
+slug=$(grep -E "^\| \*{0,2}${m}[ *|]" docs/STATUS.md | sed -n 's|.*docs/plans/\([A-Za-z0-9._-]*\)\.md.*|\1|p'); [ -n "$slug" ] || slug=$m
+ledger=""; for l in "docs/sdd/$slug/progress.md" "docs/sdd/$m/progress.md"; do [ -f "$l" ] && { ledger=$l; break; }; done
+handoff="docs/sdd/$m/handoff.md"
+
+dump() {
+sec "handoff  $handoff"
+cat "$handoff" 2>/dev/null || echo "(none: this session wrote no handoff)"
+if [ -f .claude/scope.json ] && [ -f "$handoff" ]; then
   want=$(jq -r '.session // empty' .claude/scope.json)
-  got=$(sed -n 's/^session:[[:space:]]*//p' "docs/sdd/$m/handoff.md" | head -1)
+  got=$(sed -n 's/^session:[[:space:]]*//p' "$handoff" | head -1)
   [ -z "$want" ] || [ "$want" = "$got" ] || echo "SESSION-MISMATCH: handoff says session '$got', spawn recorded $want; treat the handoff as missing"
 fi
 # The SDD workspace script writes docs/sdd/<SLUG>/ (plan stem); the milestone
 # scratch (handoff, briefs, lock) is docs/sdd/<M>/. Read the ledger from either.
-slug=$(grep -E "^\| \*{0,2}${m}[ *|]" docs/STATUS.md | sed -n 's|.*docs/plans/\([A-Za-z0-9._-]*\)\.md.*|\1|p'); [ -n "$slug" ] || slug=$m
-ledger=""; for l in "docs/sdd/$slug/progress.md" "docs/sdd/$m/progress.md"; do [ -f "$l" ] && { ledger=$l; break; }; done
 sec "ledger   ${ledger:-docs/sdd/$slug/progress.md}"
 [ -n "$ledger" ] && cat "$ledger" || echo "(none yet)"
 sec "plan files"
@@ -49,7 +59,7 @@ if [ "${STATUS_NO_CHECKS:-}" = 1 ]; then echo "(skipped: STATUS_NO_CHECKS=1)"; e
 sec "scope  .claude/scope.json (written by spawn)"
 if [ ! -f .claude/scope.json ]; then
   echo "(none: spawn has not run in this worktree; no scope check possible)"
-  exit 0
+  return 0
 fi
 jq -r '"role=\(.role) session=\(.session) base=\(.base[0:12]) tasks=\(.tasks | map(.n) | join(","))", "allow: \(.allow | join(" "))", (.warnings[]? | "WARN: " + .)' .claude/scope.json
 base=$(jq -r .base .claude/scope.json)
@@ -97,9 +107,74 @@ for c in $(git rev-list --reverse "$base..HEAD"); do
     case " $scope_tasks " in *" $tn "*) ;; *) echo "COMMIT-CHECK: $short names task $tn, not one of this session's tasks ($scope_tasks)";; esac
   fi
   spans=$(git diff-tree --no-commit-id -r --name-only "$c" | while IFS= read -r f; do task_of "$f"; done | tr ' ' '\n' | awk 'NF && !seen[$0]++' | tr '\n' ' ')
-  n=$(printf '%s' "$spans" | wc -w | tr -d ' ')
-  [ "$n" -le 1 ] || echo "COMMIT-CHECK: $short touches files of tasks $spans (one task per commit)"
-  if [ -n "$tn" ] && [ "$n" = 1 ] && [ "${spans% }" != "$tn" ]; then
+  span_n=$(printf '%s' "$spans" | wc -w | tr -d ' ')
+  [ "$span_n" -le 1 ] || echo "COMMIT-CHECK: $short touches files of tasks $spans (one task per commit)"
+  if [ -n "$tn" ] && [ "$span_n" = 1 ] && [ "${spans% }" != "$tn" ]; then
     echo "COMMIT-CHECK: $short says task $tn but changes files listed for task ${spans% }"
   fi
 done
+}
+
+if [ "$full" = 1 ]; then dump; exit 0; fi
+
+# ---- terse mode: dump to file, print verdict + handoff + actionable lines --------
+n=$("$ds" "$m" get session 2>/dev/null || true); role=$("$ds" "$m" get role 2>/dev/null || true)
+[ -n "$n" ] || n=$(jq -r '.session // "x"' .claude/scope.json 2>/dev/null || echo x)
+[ -n "$role" ] || role=$(jq -r '.role // "?"' .claude/scope.json 2>/dev/null || echo "?")
+out="docs/sdd/$m/status-$n.txt"; mkdir -p "docs/sdd/$m"
+dump > "$out" 2>&1 || true
+
+outcome=$(sed -n 's/^outcome:[[:space:]]*//p' "$handoff" 2>/dev/null | head -1 | tr -d '[:space:]')
+if [ ! -f "$handoff" ]; then hand="missing"
+elif grep -q '^SESSION-MISMATCH:' "$out"; then hand="mismatch"; outcome=""
+elif [ -z "$outcome" ]; then hand="malformed (no outcome line)"
+else hand="ok"; fi
+cnt() { grep -c "$1" "$out" || true; }
+oos=$(cnt '^OUT-OF-SCOPE:'); cc=$(cnt '^COMMIT-CHECK:'); hist=$(cnt '^HISTORY:'); warn=$(cnt '^WARN: ')
+scope_v="clean"; [ "$oos" = 0 ] || scope_v="$oos OUT-OF-SCOPE"
+commits_v="ok"; [ "$cc" = 0 ] || commits_v="$cc COMMIT-CHECK"
+hist_v="ok"; [ "$hist" = 0 ] || hist_v="rewritten"
+summary=$(grep -m1 -E '^summary: [0-9]+ PASS' "$out" | sed 's/^summary: *//' || true)
+[ -n "$summary" ] || summary=$(grep -m1 -E '^exit-checks: none|^\(skipped' "$out" || echo "(no exit-check summary; see file)")
+lock=$(grep -m1 -E '^lock: (OK|NONE|FROZEN|TAMPERED|EXISTS)' "$out" | sed 's/^lock: *//' || true); [ -n "$lock" ] || lock="none"
+attention=$(grep -E '^(E|I)[0-9]+ .*→ (AT-RISK|DISAGREE|OWNER-CLAIM|MISSING|UNMATCHED)|^UNMATCHED |^lock: TAMPERED|^OUT-OF-SCOPE:|^COMMIT-CHECK:|^HISTORY:|^WARN: |^SESSION-MISMATCH:|^   \| ' "$out" || true)
+
+# Role artifacts (facts only; the outcome table in SKILL.md says what DONE needs).
+art=""
+has() { [ -e "$1" ] && echo yes || echo no; }
+case "$role" in
+  plan)
+    plan_has_checks=no; [ -f "docs/plans/$slug.md" ] && grep -q '^## Exit checks' "docs/plans/$slug.md" && plan_has_checks=yes
+    art="spec=$(has docs/plans/$slug.spec.md) impl=$(has docs/plans/$slug.impl.md) plan=$(has docs/plans/$slug.md) exit-checks-table=$plan_has_checks ledger=$([ -n "$ledger" ] && echo yes || echo no)" ;;
+  execute|probe)
+    unfinished="?"
+    if [ -n "$ledger" ]; then
+      total=$(awk -F'|' '/^[[:space:]]*\|[[:space:]]*[0-9]+[[:space:]]*\|/{c++} END{print c+0}' "$ledger")
+      done_n=$(awk -F'|' '/^[[:space:]]*\|[[:space:]]*[0-9]+[[:space:]]*\|/ { s=$5; if (s ~ /done|complete/) c++ } END{print c+0}' "$ledger")
+      unfinished=$((total - done_n))
+    fi
+    rows=$(grep -cE '^(E|I)[0-9]+ ' "$out" || true); ep=$(awk '/^exit-progress:/{p=1; next} /^[a-z-]+:/{p=0} p && /^- /' "$handoff" 2>/dev/null | wc -l | tr -d ' ')
+    atrisk=$(grep -ci 'at risk' "$handoff" 2>/dev/null || true); notyet=$(grep -ci 'not yet' "$handoff" 2>/dev/null || true)
+    art="unfinished-tasks=$unfinished exit-progress-lines=$ep/$rows at-risk=$atrisk not-yet=$notyet" ;;
+  finish)
+    pr=$(grep -oE 'https://github\.com/[^ ]+/pull/[0-9]+' "$handoff" 2>/dev/null | head -1 || true)
+    art="pr-url=${pr:-none} evidence-lines=$(awk '/^evidence:/{p=1; next} /^[a-z-]+:/{p=0} p && /^- /' "$handoff" 2>/dev/null | wc -l | tr -d ' ')" ;;
+  audit) art="handoff-only role; compare exit-progress with the previous worker handoff (docs/sdd/$m/session-*-handoff.md)" ;;
+esac
+
+[ "$hand" = ok ] && "$ds" "$m" set last_outcome "${outcome:-null}" step gate >/dev/null 2>&1 || true
+
+echo "===== VERDICT $m  session=$n role=$role  ($(git rev-parse --short HEAD), $(git status --porcelain --untracked-files=no | wc -l | tr -d ' ') uncommitted)"
+echo "HANDOFF=$hand"
+echo "OUTCOME=${outcome:-none}"
+echo "SCOPE=$scope_v  COMMITS=$commits_v  HISTORY=$hist_v  WARN=$warn"
+echo "EXIT=$summary"
+echo "LOCK=$lock"
+echo "ARTIFACTS: $art"
+echo "FULL=$out   (read only when a line above is not clean/ok/none, or ARTIFACTS falls short of the role's DONE rule)"
+sec "handoff  $handoff"
+cat "$handoff" 2>/dev/null || echo "(none: this session wrote no handoff)"
+if [ -n "$attention" ]; then
+  sec "attention  (each line is a driver rule in SKILL.md; relay verbatim)"
+  printf '%s\n' "$attention"
+fi

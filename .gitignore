@@ -8,8 +8,14 @@ docs/sdd/*/review-*.diff
 # driving-a-milestone scratch (regenerable); the worker's session-end writes are tracked
 docs/sdd/*/session-*-brief.md
 docs/sdd/*/handoff.md
+docs/sdd/*/session-*-handoff.md
+docs/sdd/*/status-*.txt
+# the driver's on-disk memory (scripts/milestone/driver-state); lets a driver resume after compaction or sleep
+docs/sdd/*/driver.json
 # per-session write scope written by scripts/milestone/spawn; enables scripts/hooks/guard-scope.sh
 .claude/scope.json
+# scripts/hooks/require-handoff.sh block counter, reset by spawn
+.claude/stop-blocks
 # driver-side memory of the frozen ## Exit checks table (scripts/milestone/exit-check --freeze)
 docs/sdd/*/exit-checks.lock
 

@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# The driver's memory on disk: <WORKTREE>/docs/sdd/<M>/driver.json (gitignored).
+#
+# Everything the driving-a-milestone driver used to keep only in its chat
+# history lives here instead: pane, session number, role, base SHA, the step
+# the loop is at, the last wait result, nudges sent, owner answers pending
+# delivery. claim/spawn/wait/status write it; a driver that lost its context
+# (compaction, restart, laptop sleep) reads it and continues (SKILL.md §Resume).
+#
+# Usage: scripts/milestone/driver-state <MILESTONE-ID> get [KEY]        print the file, or one key (raw)
+#        scripts/milestone/driver-state <MILESTONE-ID> set KEY VALUE... set string/number/null/JSON values
+#        scripts/milestone/driver-state <MILESTONE-ID> add KEY VALUE    append VALUE to the array at KEY
+#        scripts/milestone/driver-state <MILESTONE-ID> path             print the file path
+# VALUE is stored as a number when it looks like one, `null` as null, `[...]`/`{...}` as JSON, else string.
+set -euo pipefail
+[ $# -ge 2 ] || { echo "usage: driver-state <MILESTONE-ID> get|set|add|path ..." >&2; exit 2; }
+m=$1; op=$2; shift 2
+root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+wt="$(dirname "$root")/$(basename "$root")-$m"
+file="$wt/docs/sdd/$m/driver.json"
+
+to_json() { # VALUE → JSON literal
+  local v=$1
+  if [ "$v" = null ]; then echo null
+  elif printf '%s' "$v" | grep -Eq '^-?[0-9]+$'; then printf '%s' "$v"
+  elif printf '%s' "$v" | grep -Eq '^[[{]' && printf '%s' "$v" | jq -e . >/dev/null 2>&1; then printf '%s' "$v"
+  else jq -n --arg v "$v" '$v'
+  fi
+}
+ensure() {
+  [ -d "$wt" ] || { echo "no worktree at $wt; run scripts/milestone/claim $m first" >&2; exit 3; }
+  mkdir -p "$(dirname "$file")"
+  [ -f "$file" ] || printf '{"milestone": %s}\n' "$(jq -n --arg m "$m" '$m')" > "$file"
+}
+
+case "$op" in
+  path) echo "$file" ;;
+  get)
+    [ -f "$file" ] || { echo "no driver state at $file" >&2; exit 4; }
+    if [ $# -eq 0 ]; then jq . "$file"; else jq -r --arg k "$1" '.[$k] // empty | if type == "string" then . else tojson end' "$file"; fi ;;
+  set)
+    ensure
+    [ $# -ge 2 ] && [ $(( $# % 2 )) -eq 0 ] || { echo "usage: driver-state <M> set KEY VALUE [KEY VALUE ...]" >&2; exit 2; }
+    tmp=$(mktemp "$file.XXXXXX")
+    cp "$file" "$tmp"
+    while [ $# -gt 0 ]; do
+      jq --arg k "$1" --argjson v "$(to_json "$2")" '.[$k] = $v' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
+      shift 2
+    done
+    jq --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.updated_at = $t' "$tmp" > "$file" && rm -f "$tmp" ;;
+  add)
+    ensure
+    [ $# -eq 2 ] || { echo "usage: driver-state <M> add KEY VALUE" >&2; exit 2; }
+    tmp=$(mktemp "$file.XXXXXX")
+    jq --arg k "$1" --argjson v "$(to_json "$2")" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '.[$k] = ((.[$k] // []) + [$v]) | .updated_at = $t' "$file" > "$tmp" && mv "$tmp" "$file" ;;
+  *) echo "unknown op: $op (get|set|add|path)" >&2; exit 2 ;;
+esac

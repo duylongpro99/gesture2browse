@@ -2,7 +2,7 @@
 
 Every brief = **common header** + one **role block** (+ **Previous answers** when resuming after a NEEDS-OWNER whose pane died). `<…>` is filled by the driver; `{…}` is written by the worker and stays as is. The worker reads the brief in one call and shares no history with the driver, so the brief must stand alone.
 
-Driver inputs: `WORKTREE BRANCH BASE SLUG` from `claim`; `N` from `spawn`; the roadmap row (`docs/05-roadmap.md`, section number of the milestone); the previous handoff's `next`.
+`scripts/milestone/brief <M>` assembles the brief from this file: `<WORKTREE> <BASE> <SLUG>` from `claim`, `<N> <role>` from `spawn`, `<section>` from the roadmap heading that names the milestone, the previous handoff's `next` and any undelivered owner answers from `driver.json`. The driver runs the script; it does not read this file or write a brief by hand. Keep the fenced blocks under `## Common header` and `## Role \`<role>\`` as the only templates, and keep every worker-side placeholder in `{…}`.
 
 ## Common header
 
@@ -16,7 +16,7 @@ Start with `docs/STATUS.md`, then only what `CLAUDE.md §0` lists for this task,
 
 **Scope.** Your writes are limited to the paths in `.claude/scope.json` (read it once; `allow` globs, `deny` globs, and for `execute` the `tasks` you own). A hook denies everything else and blocks after a command that left changes outside them. A denial is not an obstacle to route around: if the task truly needs that path, stop and hand off `NEEDS-OWNER` with one `owner-questions` line per path, `path — reason`. Never edit `.claude/scope.json`, `.claude/settings*.json`, `scripts/hooks/`, the spec or the impl plan; `git add` explicit paths only; no `git stash`, `checkout <ref>`, `reset`, `rebase`.
 
-**Commit before every handoff**, whatever the outcome. Every commit belongs to exactly one task: `git add <its paths>`, body first line `[<component>] task <N>: <task title>` (`[docs]` for the session-end writes, which are their own commit). Never `git push --force`, never merge, never edit roadmap §8.
+**Commit before every handoff**, whatever the outcome. Every commit belongs to exactly one task: `git add {its paths}`, body first line `[{component}] task {N}: {task title}` (`[docs]` for the session-end writes, which are their own commit). Never `git push --force`, never merge, never edit roadmap §8.
 
 **Handoff (required, every time you stop).** Write `docs/sdd/<M>/handoff.md` exactly:
 
@@ -44,7 +44,7 @@ Start with `docs/STATUS.md`, then only what `CLAUDE.md §0` lists for this task,
 Produce `docs/plans/<SLUG>.spec.md`, `docs/plans/<SLUG>.impl.md`, `docs/plans/<SLUG>.md` (five-question form + `## Status`), then the SDD workspace.
 
 ## Steps
-0. If any of the three files already exists, continue from the first missing one. Your scope is `docs/` plus the contract tests of step 5b under `<package>/test/contracts/`: no other code, no config; a task that needs code belongs in the `.impl.md`, not in this session. Every `.impl.md` task must carry a `**Files:**` block with exact `Create:`/`Modify:`/`Test:` paths; the next sessions' write scope is derived from it, so a missing or vague path becomes a denied write later.
+0. If any of the three files already exists, continue from the first missing one. Your scope is `docs/` plus the contract tests of step 5b under `{package}/test/contracts/`: no other code, no config; a task that needs code belongs in the `.impl.md`, not in this session. Every `.impl.md` task must carry a `**Files:**` block with exact `Create:`/`Modify:`/`Test:` paths; the next sessions' write scope is derived from it, so a missing or vague path becomes a denied write later.
 1. Inputs: the roadmap row, its plan inputs in §8, `docs/02-architecture.md §3` and `§6`, `docs/plans/README.md`, any doc a task in the row names, and, for each item in **Interfaces fixed here**, the roadmap row of each consumer it names (their Plan scope, Task and Exit cells only). Nothing else from `docs/`.
 2. If the row's task table has docs-only work verified by the owner before planning (e.g. 0A task 0.1), do it first, commit, hand off NEEDS-OWNER with a one-paragraph diff summary, and resume on approval. A task the repo already satisfies (e.g. `CLAUDE.md` exists): note it in `## Status`, move on.
 3. `obra-brainstorming` → spec. Skip the visual companion. Spec questions go through NEEDS-OWNER handoffs, batched.
@@ -63,7 +63,7 @@ Advance `docs/plans/<SLUG>.impl.md` with `obra-subagent-driven-development`.
 ## Steps
 0. Re-read the roadmap row's **Exit** and **Interfaces fixed here** cells, the spec's goal section, and `## Exit checks` in `docs/plans/<SLUG>.md`. The task list serves those; they do not serve the task list. If the next unfinished task no longer moves an exit criterion, or would fix an interface in a shape its named consumer cannot use, do not complete it: hand off `NEEDS-OWNER` with the criterion, the conflict, and your recommendation. `## Exit checks` and the contract tests it names are frozen: never edit them (the scope hook denies `*/test/contracts/`), never add a test that shadows one; a check you believe wrong → `NEEDS-OWNER` with the row and why. Before your handoff run `scripts/milestone/exit-check <M> --fast` and grade `exit-progress` from it (`met` only on `PASS`; `at risk` stays your call).
 1. Read `docs/sdd/<M>/progress.md` and the plan `## Status`; start at the first unfinished task.
-2. Complete **at most 2 tasks** this session: the ones listed under `tasks` in `.claude/scope.json` (spec review, code review, boundary gate against the rule file). Files of any other task are denied. One commit per task (`[<component>] task <N>: …`); the SDD fix rounds of a task may add commits with the same task line. Then hand off `CONTINUE`, or `DONE` when no task remains. A file the task needs but the scope lacks → `NEEDS-OWNER`, `path — reason`; never restructure the task to avoid the path.
+2. Complete **at most 2 tasks** this session: the ones listed under `tasks` in `.claude/scope.json` (spec review, code review, boundary gate against the rule file). Files of any other task are denied. One commit per task (`[{component}] task {N}: …`); the SDD fix rounds of a task may add commits with the same task line. Then hand off `CONTINUE`, or `DONE` when no task remains. A file the task needs but the scope lacks → `NEEDS-OWNER`, `path — reason`; never restructure the task to avoid the path.
 3. A task that needs a rule deviation: draft the ADR under `docs/adr/`, finish tasks that do not depend on it, hand off `NEEDS-OWNER` with the ADR path. Never merge the ADR yourself.
 4. A task whose roadmap verification names the owner: do the agent-side verification, then `NEEDS-OWNER` with the exact steps the owner runs.
 5. Threshold, filter, or gesture change: fixture replay is the failing test (`docs/plans/README.md §Superpowers`).

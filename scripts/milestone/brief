@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Write the worker's session brief from the templates in
+# .claude/skills/driving-a-milestone/references/briefs.md, so the driver never
+# reads the 13 KB reference or types a brief into its own context.
+#
+# Fills every `<…>` the driver used to fill by hand: <M> <N> <role> <WORKTREE>
+# <BASE> (the base branch, from claim) <SLUG> <section> (the roadmap heading
+# that names the milestone) and the previous handoff's `next` (spawn archived
+# it into driver.json as prev_next). `{…}` fields are the worker's and stay.
+# When driver.json holds undelivered `answers` (a NEEDS-OWNER whose pane died),
+# the "Previous answers" section is appended and the answers are marked delivered.
+#
+# Usage: scripts/milestone/brief <MILESTONE-ID> [--stdout]
+#   Reads N and ROLE from driver.json (written by spawn). Writes
+#   <WORKTREE>/docs/sdd/<M>/session-<N>-brief.md (gitignored) and prints its path,
+#   or the brief itself with --stdout (nothing written, answers untouched).
+set -euo pipefail
+[ $# -ge 1 ] || { echo "usage: brief <MILESTONE-ID> [--stdout]" >&2; exit 2; }
+m=$1; shift; stdout=0
+for a in "$@"; do case "$a" in --stdout) stdout=1 ;; *) echo "unknown flag $a" >&2; exit 2 ;; esac; done
+here=$(cd "$(dirname "$0")" && pwd)
+root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+wt="$(dirname "$root")/$(basename "$root")-$m"
+[ -d "$wt" ] || { echo "no worktree at $wt; run scripts/milestone/claim $m first" >&2; exit 3; }
+ref="$root/.claude/skills/driving-a-milestone/references/briefs.md"
+[ -f "$ref" ] || { echo "no template at $ref" >&2; exit 4; }
+ds="$here/driver-state"
+
+n=$("$ds" "$m" get session); role=$("$ds" "$m" get role)
+[ -n "$n" ] && [ -n "$role" ] || { echo "driver.json has no session/role; run scripts/milestone/spawn $m <role> first" >&2; exit 5; }
+slug=$("$ds" "$m" get slug); [ -n "$slug" ] || slug=$m
+base_branch=$("$ds" "$m" get base_branch); [ -n "$base_branch" ] || base_branch=master
+prev_next=$("$ds" "$m" get prev_next); [ -n "$prev_next" ] || prev_next="none: first session"
+
+# Roadmap section: the ### heading naming the milestone exactly, else the one
+# whose range (e.g. 0B–0E) contains it; the driver sees a WARN when neither.
+section=$(awk -v m="$m" '
+  /^###[ \t]+[0-9]+(\.[0-9]+)*[ \t]+Milestones?[ \t]/ {
+    sec = $2; rest = $0
+    if (rest ~ ("[ \t]" m "([^A-Za-z0-9.]|$)")) { print sec; exit }
+    if (match(rest, /[0-9]+[A-Z][–-][0-9]+[A-Z]/)) {
+      r = substr(rest, RSTART, RLENGTH); gsub(/–/, "-", r)
+      split(r, ab, "-"); a = ab[1]; b = ab[2]
+      if (substr(a, 1, length(a) - 1) == substr(m, 1, length(m) - 1) && substr(a, length(a)) <= substr(m, length(m)) && substr(m, length(m)) <= substr(b, length(b))) { print sec; exit }
+    }
+  }' "$wt/docs/05-roadmap.md")
+[ -n "$section" ] || { echo "WARN=no roadmap heading names $m; <section> left in the brief for the driver to fill" >&2; section="<section>"; }
+
+# Fenced block under a heading in the reference.
+block() { awk -v h="$1" '$0 == h {p=1; next} p && /^```/ { if (f) exit; f=1; next } p && f' "$ref"; }
+header=$(block "## Common header")
+body=$(block "## Role \`$role\`")
+[ -n "$header" ] && [ -n "$body" ] || { echo "template lacks '## Common header' or '## Role \`$role\`' in $ref" >&2; exit 4; }
+
+# Undelivered owner answers → "Previous answers" section (only when the pane died).
+answers_json=$("$ds" "$m" get answers 2>/dev/null || echo '[]'); [ -n "$answers_json" ] || answers_json='[]'
+pending=$(printf '%s' "$answers_json" | jq -r '[.[] | select(.delivered != true)] | length')
+answers=""
+if [ "$pending" -gt 0 ]; then
+  answers=$(printf '\n## Previous answers\nSession %s asked (see its handoff, reproduced here) and the owner answered:\n' "$((n - 1))"
+    printf '%s' "$answers_json" | jq -r '[.[] | select(.delivered != true)] | to_entries[] | "\(.key + 1). \(.value.question) → \(.value.answer)"')
+fi
+
+fill() {
+  sed -e "s|<M>|$m|g" -e "s|<N>|$n|g" -e "s|<role>|$role|g" -e "s|<WORKTREE>|$wt|g" \
+      -e "s|<BASE>|$base_branch|g" -e "s|<SLUG>|$slug|g" -e "s|<section>|$section|g"
+}
+prev_line=$(printf '%s' "$prev_next" | sed -e 's/[&|\\]/\\&/g')
+out=$( { printf '%s\n\n%s\n%s\n' "$header" "$body" "$answers" | fill | sed -e "s|<previous handoff \`next\`, or \"none: first session\">|$prev_line|"; } )
+
+if [ "$stdout" = 1 ]; then printf '%s\n' "$out"; exit 0; fi
+dest="$wt/docs/sdd/$m/session-$n-brief.md"
+mkdir -p "$(dirname "$dest")"
+printf '%s\n' "$out" > "$dest"
+if [ "$pending" -gt 0 ]; then
+  "$ds" "$m" set answers "$(printf '%s' "$answers_json" | jq -c 'map(.delivered = true)')" >/dev/null
+fi
+"$ds" "$m" set brief "docs/sdd/$m/session-$n-brief.md" step briefed >/dev/null
+echo "$dest"
