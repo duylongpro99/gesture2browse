@@ -112,4 +112,6 @@ _Owned by the 0B session; rewritten, not appended._
 
 **Exit checks:** the driver refroze the lock at `14f62d9` (E1 owner + E2 mechanical). Commit `506d725` (V1→E2 rename) accepted as-is. E2 green via `exit-check 0B --fast` (PASS/AGREE); E1 met (owner logged 30.5 fps).
 
+**Done (session 3, finish):** re-verified on a clean tree — `pnpm typecheck` 7/7, `pnpm lint` 5/5 + `boundary-lint OK`, `pnpm test` all green; `scripts/milestone/exit-check 0B` (full) = **1 PASS 0 FAIL 1 OWNER**, lock OK at `14f62d9`. No thresholds changed (docs-only finish), so no fixture replay. Pushed `0B` → `origin/0B` and opened **PR #2 → master** (https://github.com/duylongpro99/gesture2browse/pull/2). Did not merge and did not edit §8. `docs/spike-results.md` §G2 stray `30.5` left untouched (out of scope; owner to clear).
+
 **Superpowers conflicts noted (`CLAUDE.md §6`):** none.
