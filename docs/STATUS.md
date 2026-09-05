@@ -17,6 +17,6 @@ _Project section last updated: 2026-09-04 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 0A scaffold, harness, `gesture-core` v0 | drv-0A | Execute: Tasks 1–6 done (scaffold, protocol, gesture-core v0, fixtures, playground bench, extension skeleton). Exit E1/E2/E3/I1/I2/I3 all PASS (`--fast`). Next: Tasks 7 (CI + boundary lint) and 8 (spike template) — need `.github/`, `scripts/lint/`, root `package.json` in scope. | `docs/plans/0A-scaffold.md` | 2026-09-05 |
+| 0A scaffold, harness, `gesture-core` v0 | drv-0A | Execute DONE: all 8 tasks done (scaffold, protocol, gesture-core v0, fixtures, playground bench, extension skeleton, CI + boundary lint, spike template). Exit E1/E2/E3/I1/I2/I3 all PASS (`--fast`), lock OK. Next: finish phase — run E1 clean-clone without `--fast`, confirm CI green, integrate. | `docs/plans/0A-scaffold.md` | 2026-09-05 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
