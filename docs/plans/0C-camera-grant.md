@@ -90,14 +90,23 @@ Not frozen by this docs-only session (the lock `docs/sdd/0C/exit-checks.lock` is
 
 _Owned by the 0C session; rewritten, not appended._
 
-**Done (session 0, plan):** wrote this plan (five questions + **Files:** block + Exit checks table). This is the first probe session and `.claude/scope.json` carries no code paths (docs-only), so per the session brief the plan is committed and the handoff is `CONTINUE`; the next session's write scope is derived from the **Files:** block above.
+**Done (session 1, implement, TDD):** the whole **Files:** block, all green.
+- `packages/protocol/src/camera-grant.ts` — `CameraGrantStatus` + `CameraPermissionState` Zod schemas, exported from `index.ts`; schema cases in `test/schemas.test.ts` (28 protocol tests pass).
+- `apps/extension/entrypoints/grant-camera/permission.ts` — pure `deriveGrant(state, seen, source, ts)` helper (persistence + "Allow this time" + first-grant), no browser globals; `test/permission.test.ts` (6 cases) green.
+- `apps/extension/entrypoints/grant-camera/{main.ts,index.html}` — full-tab page: `permissions.query` pre-check → `getUserMedia` → stop all tracks → re-query → derive + write `CameraGrantStatus` to `storage.session` + `cameraGrantSeen` to `storage.local`; renders state + "Allow on every visit" guidance + "Allow this time" warning. No video rendered/retained.
+- `apps/extension/entrypoints/background.ts` — `ensureCameraPermission()` gate before `ensureOffscreen()`: queries the camera state, opens the grant page via `chrome.tabs.create` only on a *definitive* not-granted signal (proceeds on `unknown` so an indeterminate SW never strands a working pump), writes `CameraGrantStatus { source: 'background-precheck' }` + a `cameraPrecheck` diagnostic; `RunCameraPrecheck` re-runs the gate on demand.
+- `.claude/rules/grant-camera.md` — new component boundary rule (CLAUDE.md §5).
+- `apps/extension/playwright.config.ts` — two named projects (`frame-pump`, `camera-grant`).
+- `apps/extension/test/camera-grant.e2e.ts` — E2 (pre-granted permission): grant page reads `granted`, `getUserMedia` no prompt, `CameraGrantStatus{granted,persistent:true,source:'grant-page'}` in `storage.session`, gate opens no tab, offscreen `getUserMedia` succeeds.
 
-**Scope the next session needs** (flagged for the driver/owner deriving scope from the **Files:** block): `apps/extension/entrypoints/grant-camera/**`, `apps/extension/entrypoints/background.ts`, `packages/protocol/**`, `apps/extension/playwright.config.ts`, `apps/extension/test/**`, `docs/spike-results.md`, `pnpm-lock.yaml`, **and `.claude/rules/grant-camera.md`** (new component rule, CLAUDE.md §5). If the scope-deriver excludes `.claude/rules/**`, the owner grants that one path (else the execute session hands off `NEEDS-OWNER: .claude/rules/grant-camera.md — new component needs its boundary rule, CLAUDE.md §2/§5`).
+**Verification:** `tsc` (protocol + extension) clean; `boundary-lint` OK; eslint clean; protocol 28 + extension 12 unit tests pass; `pnpm exec playwright test -c apps/extension/playwright.config.ts` — **2 passed** (G2 camera-grant; G1 frame-pump unregressed, full 60 s window p05 30.0 fps).
 
-**In progress:** execute the **Files:** block with TDD (unit helper + schema first, then e2e), then the owner's Chrome-restart / "Allow this time" check, then a §8 proposed decision and `DONE`.
+**Spike finding (resolves plan §2 open question):** the MV3 **service worker _can_ answer `navigator.permissions.query({name:'camera'})`** in this Chromium build (E2 `queryAnswered: true`, `source: 'sw-query'`). The background gate queries directly; the last-`CameraGrantStatus` `storage.session` fallback is retained for any build/context where the SW query throws.
 
-**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** none yet — G2 go/no-go is entered by the execute+finish session after E1 (owner) and E2 (agent) are both in `spike-results.md §G2`.
+**In progress / next:** owner **E1** — grant from a real full tab, restart Chrome, confirm offscreen `getUserMedia` succeeds with no prompt; then test Chrome's "Allow this time" and confirm it is detected (not mistaken for persistent). Steps are in `docs/sdd/0C/handoff.md`. After E1 lands in `spike-results.md §G2`, the finish session proposes the §8 G2 go/no-go.
 
-**Blockers:** none. Owner action is required only at the exit check (Chrome restart + "Allow this time" test), which the finish session surfaces as `NEEDS-OWNER` with the exact steps.
+**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** none yet — G2 go/no-go is entered after E1 (owner) joins E2 (agent) in `spike-results.md §G2`. Candidate wording once E1 passes: "G2 met: full-tab grant persists across restart; SW `permissions.query` gate; 'Allow this time' detected."
+
+**Blockers:** owner E1 (Chrome-restart + "Allow this time"), surfaced as `NEEDS-OWNER`.
 
 **Superpowers conflicts noted (`CLAUDE.md §6`):** none.
