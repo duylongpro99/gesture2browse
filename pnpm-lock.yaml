@@ -8,6 +8,12 @@ importers:
 
   .:
     devDependencies:
+      '@gesture/gesture-core':
+        specifier: workspace:*
+        version: link:packages/gesture-core
+      '@gesture/protocol':
+        specifier: workspace:*
+        version: link:packages/protocol
       '@playwright/test':
         specifier: ^1.47.0
         version: 1.62.1

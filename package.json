@@ -6,10 +6,13 @@
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
-    "lint": "turbo run lint",
+    "lint": "turbo run lint && node scripts/lint/boundary-lint.mjs",
+    "lint:boundary": "node scripts/lint/boundary-lint.mjs",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
+    "@gesture/gesture-core": "workspace:*",
+    "@gesture/protocol": "workspace:*",
     "turbo": "^2.1.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",
