@@ -113,11 +113,16 @@ _Owned by the 0D session; rewritten, not appended._
 
 **Done (session 1, live run — owner-directed):** ran `SURVEY_LIVE=1` (E1), recorded verbatim in `spike-results.md §G5` as a labeled live-run subsection. **E1 owner-confirmed met (2026-09-05):** the owner re-ran on their machine and the results match — `openstreetmap` `ERR_CONNECTION_REFUSED` (site/network, not a dispatch finding), `mdn-select` both-fail as expected, `wikipedia-anchor` CDP coordinate-click off the anchor = harness artifact; none contradicts the local E3 authority. Added a §G5 caveat flagging that 1C's CDP dispatcher must target the element bounding box with scroll-into-view, not raw coordinates (evidenced by the wikipedia CDP miss).
 
+**Done (session 2, finish):** re-verified on a clean tree and opened the PR to `master`. `pnpm run typecheck` 7/7, `pnpm run lint` 5/5 + boundary-lint OK, `pnpm run test` 7/7 (dispatch-survey unit 10/10); `scripts/milestone/exit-check 0D` (full) → `1 PASS 0 FAIL 2 OWNER`, lock OK, E3 mechanical PASS. No thresholds changed, so no fixture replay. Reformatted the §8 proposed decision below into the single applyable blockquote row `scripts/milestone/log-decision` expects (heading + `> | … |` row before the first blank line). Did not merge; did not edit roadmap §8 or `03-tech-stack`.
+
 **In progress:** none. **Gate G5 met** (E3 agent + E1 owner). **Owner-only remaining:** E2 = log the §8 row + `03-tech-stack §4` number post-merge.
 
-**Next:** owner logs the CDP dispatch default in roadmap §8 and enters the number in `03-tech-stack §4` post-merge (E2, owner-only). Milestone 0D is complete on the agent side.
+**Next:** owner merges the PR, then logs the CDP dispatch default in roadmap §8 (via `scripts/milestone/log-decision --apply`, which consumes the blockquote row below) and enters the number in `03-tech-stack §4` (E2, owner-only). Milestone 0D is complete on the agent side.
 
-**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** **click-dispatch default = CDP** (trusted `Input.dispatchMouseEvent`) — **owner-confirmed 2026-09-05**, with *synthetic-first + CDP-escalation* as the noted alternative. Basis: 4/15 local sites are only reachable via the trusted path (and, live, the activation-gated `window.open`/`target=_blank` cases), so a synthetic default silently fails on hostile pages; `native-select` needs keyboard regardless. Feeds 1A (dispatch default path) and 1C (dispatcher, CDP opt-in shape). Owner logs the §8 row and `03-tech-stack §4` number post-merge.
+**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):**
+> | 2026-09-05 | **Click-dispatch default = CDP** (trusted `Input.dispatchMouseEvent`); *synthetic-first + CDP-escalation* is the noted alternative. 1C's CDP dispatcher must target the element bounding box with scroll-into-view (§G5 caveat), not raw coordinates. | G5 (0D): E3 Playwright survey (synthetic 10/15, CDP 14/15; CDP rescues 4) + E1 owner spot-check 2026-09-05 | Recorded in `spike-results.md §G5`; unblocks 1A, 1C; number to `03-tech-stack §4` |
+
+Basis: 4/15 local sites are only reachable via the trusted path (and, live, the activation-gated `window.open`/`target=_blank` cases), so a synthetic default silently fails on hostile pages; `native-select` needs keyboard regardless. Feeds 1A (dispatch default path) and 1C (dispatcher, CDP opt-in shape). Owner logs the §8 row and `03-tech-stack §4` number post-merge.
 
 **Blockers:** owner laptop/live-site access for the E1 spot-check (roadmap §3.3 G5); not a blocker for the agent's local-fixture survey, which is complete and green.
 
