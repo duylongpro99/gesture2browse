@@ -88,16 +88,24 @@ Not frozen by this docs-only session (the lock `docs/sdd/0B/exit-checks.lock` is
 
 _Owned by the 0B session; rewritten, not appended._
 
-**Done (session 0, plan):**
-- Read the §3.2 row, `03-tech-stack §5.1` (G1 threshold), `02-architecture §6` (`GestureFrame`), the 0A interfaces (`GestureFrame` v0, `FixtureRecord`, `BENCH_COLUMNS`), and the `offscreen`/`background`/`protocol` rules.
-- Wrote this plan (five questions + **Files:** block + Exit checks table). No open question required a brainstorm.
+**Done (session 0, plan):** wrote this plan (five questions + **Files:** block + Exit checks table).
 
-**In progress:** none.
+**Done (session 2, execute):** implemented the full **Files:** block with TDD. All commands green:
+- `PumpStat` schema in `packages/protocol` (schema test: valid / bad delegate / missing field). **Deviation from §3:** `delegate` reuses the existing `DelegateSchema` (`webgl`/`wasm`) instead of the plan's `GPU`/`CPU` — the protocol rule forbids synonyms and `DelegateSchema` already names this concept. MediaPipe's `GPU`/`CPU` strings are mapped in `mediapipe.ts`.
+- `fps-logger.ts` pure rolling-window accumulator + unit test (6 cases).
+- offscreen pump: `main.ts` (getUserMedia → `MediaStreamTrackProcessor` → transferred stream → `?worker` import), `inference.worker.ts` (stream reader → OffscreenCanvas → `detectForVideo` → fps-logger, no rAF), `mediapipe.ts` (worker-safe init, WebGL→WASM fallback).
+- `background.ts` creates the offscreen doc and validates+relays `PumpStat` to `chrome.storage.session`.
+- build: `wxt.config.ts` copies model+WASM via `build:publicAssets`, WAR + `wasm-unsafe-eval` CSP; deps added (mediapipe exact-pinned, playwright).
+- E2 (`frame-pump.e2e.ts`): **passes** — 60 s, WebGL delegate, **p05 30.0 fps** (cap), zero rAF in bundles. Numbers in `docs/spike-results.md §G1`.
 
-**Next (session 1, execute):** implement the **Files:** block with `obra-test-driven-development` — protocol `PumpStat` first, then the offscreen pump + worker + `fps-logger`, then `background.ts` relay, then the Playwright extension e2e (V1). Record numbers in `docs/spike-results.md §G1`.
+**Finding (needs owner):** an offscreen document reports `document.hidden === false` in Chrome (it is not a backgrounded tab), so the roadmap/plan premise "doc hidden ⇒ `hidden` true" does not hold. E2 records `hidden` verbatim and instead proves the gate's substance (no rAF; sustained rate with no foreground surface). Handoff owner-question 1 asks the owner to confirm this interpretation of E2/E1.
 
-**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** none yet — the G1 go/no-go (G8) is logged only after the owner's 10-minute run confirms the agent's ≥ 28 fps number.
+**Notable choices:** WXT's esbuild left `new Worker(new URL(...))` untransformed (worker not bundled) → switched to Vite's `?worker` import, which emits the worker chunk with MediaPipe. `browser.runtime.getURL` is path-typed to `PublicPath`; build-injected `/wasm` and `/models` are derived from the `/` origin.
 
-**Blockers:** the milestone Exit (E1) is owner-only — the owner's 10-minute hidden-doc run on the M1. Surfaced at execute time as a `NEEDS-OWNER` handoff with exact steps.
+**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** G1 agent-side gate met (≥ 28 fps, 30.0 measured, WebGL, no rAF); the G1 go/no-go (G8) is logged only after the owner's 10-minute M1 run (E1) confirms it.
+
+**Blockers:** E1 (owner's 10-minute hidden-doc run on the M1) is owner-only — steps in the handoff.
+
+**Exit checks freeze:** the lock `docs/sdd/0B/exit-checks.lock` is out of this session's scope; the driver refreezes it (E2 command unchanged, id renamed V1→E2 per owner).
 
 **Superpowers conflicts noted (`CLAUDE.md §6`):** none.
