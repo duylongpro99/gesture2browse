@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Claim a milestone for the driving-a-milestone skill: set its docs/STATUS.md
 # "Owner session" cell to drv-<M> on the base branch, commit, and create the
-# sibling worktree ../<repo>-<M> on branch <M>. Idempotent.
+# in-project worktree .worktrees/<M> on branch <M>. Idempotent.
 # Run from the root checkout on the branch PRs should target (it becomes BASE).
 #
 # Usage: scripts/milestone/claim <MILESTONE-ID>      e.g. 0A, 1B, 2A
@@ -12,7 +12,7 @@ m=$1; session="drv-$m"
 root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 cd "$root"
 base=$(git rev-parse --abbrev-ref HEAD)
-wt="$(dirname "$root")/$(basename "$root")-$m"
+wt="$root/.worktrees/$m"
 
 row=$(grep -E "^\| \*{0,2}${m}[ *|]" docs/STATUS.md || true)
 [ -n "$row" ] || { echo "no STATUS row for $m; the owner adds the row first (CLAUDE.md §0)" >&2; exit 3; }

@@ -16,7 +16,7 @@ set -euo pipefail
 [ $# -ge 2 ] || { echo "usage: driver-state <MILESTONE-ID> get|set|add|path ..." >&2; exit 2; }
 m=$1; op=$2; shift 2
 root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-wt="$(dirname "$root")/$(basename "$root")-$m"
+wt="$root/.worktrees/$m"
 file="$wt/docs/sdd/$m/driver.json"
 
 to_json() { # VALUE → JSON literal

@@ -19,7 +19,7 @@ m=$1; shift; full=0
 for a in "$@"; do case "$a" in --full) full=1 ;; *) echo "unknown flag $a" >&2; exit 2 ;; esac; done
 here=$(cd "$(dirname "$0")" && pwd); ds="$here/driver-state"
 root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-wt="$(dirname "$root")/$(basename "$root")-$m"
+wt="$root/.worktrees/$m"
 [ -d "$wt" ] || { echo "no worktree at $wt" >&2; exit 3; }
 cd "$wt"
 sec() { printf '\n===== %s\n' "$1"; }

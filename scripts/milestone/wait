@@ -46,7 +46,7 @@ done
 [ "${HERDR_ENV:-}" = 1 ] || { echo "not inside Herdr (HERDR_ENV!=1)" >&2; exit 1; }
 
 root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-wt="$(dirname "$root")/$(basename "$root")-$m"
+wt="$root/.worktrees/$m"
 pane=$("$ds" "$m" get pane 2>/dev/null || true); n=$("$ds" "$m" get session 2>/dev/null || true)
 [ -n "$pane" ] && [ -n "$n" ] || { echo "driver.json has no pane/session for $m; run scripts/milestone/spawn first" >&2; exit 5; }
 slug=$("$ds" "$m" get slug 2>/dev/null || true); [ -n "$slug" ] || slug=$m

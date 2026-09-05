@@ -34,7 +34,7 @@ done
 timeout_s=${EXIT_CHECK_TIMEOUT:-900}
 
 root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-wt="$(dirname "$root")/$(basename "$root")-$m"
+wt="$root/.worktrees/$m"
 [ -d "$wt" ] || { echo "no worktree at $wt" >&2; exit 3; }
 cd "$wt"
 sdd="docs/sdd/$m"; lock="$sdd/exit-checks.lock"; handoff="$sdd/handoff.md"

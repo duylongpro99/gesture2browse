@@ -19,6 +19,9 @@ docs/sdd/*/driver.json
 # driver-side memory of the frozen ## Exit checks table (scripts/milestone/exit-check --freeze)
 docs/sdd/*/exit-checks.lock
 
+# driving-a-milestone worktrees (scripts/milestone/claim); the milestone branch is tracked, its checkout is not
+.worktrees/
+
 # Build outputs and tool caches
 node_modules/
 dist/

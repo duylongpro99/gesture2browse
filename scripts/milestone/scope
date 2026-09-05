@@ -40,7 +40,7 @@ done
 case "$role" in plan|execute|finish|probe|audit) ;; *) echo "unknown role: $role (plan|execute|finish|probe|audit)" >&2; exit 2 ;; esac
 
 root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-wt="$(dirname "$root")/$(basename "$root")-$m"
+wt="$root/.worktrees/$m"
 [ -d "$wt" ] || { echo "no worktree at $wt; run scripts/milestone/claim $m first" >&2; exit 3; }
 cd "$wt"
 
