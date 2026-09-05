@@ -60,7 +60,16 @@ finish() { # $1 result, rest = detail lines
   for l in "$@"; do [ -n "$l" ] && echo "$l"; done
   [ "$r" = handoff ] && exit 0 || exit 10
 }
-have_handoff() { [ -f "$handoff" ] && [ "$(sed -n 's/^session:[[:space:]]*//p' "$handoff" | head -1)" = "$n" ]; }
+# A handoff counts only if it names session N and was written after the last
+# prompt (an --answers / --prompt to the same session leaves the previous
+# session-N handoff on disk; it must not be mistaken for the new one).
+sent_epoch=""
+sent_iso=$("$ds" "$m" get prompt_sent_at 2>/dev/null || true)
+[ -z "$sent_iso" ] || sent_epoch=$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$sent_iso" +%s 2>/dev/null || date -u -d "$sent_iso" +%s 2>/dev/null || true)
+have_handoff() {
+  [ -f "$handoff" ] && [ "$(sed -n 's/^session:[[:space:]]*//p' "$handoff" | head -1)" = "$n" ] || return 1
+  [ -z "$sent_epoch" ] || [ "$(stat -f %m "$handoff" 2>/dev/null || stat -c %Y "$handoff")" -ge "$sent_epoch" ]
+}
 agent_status() { herdr agent get "$pane" 2>/dev/null | jq -r '.result.agent.agent_status // .error.code // "unknown"'; }
 disconnect_re='Connection error|connection (lost|refused|reset)|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|socket hang up|network (error|is unreachable)|Request timed out|API Error|overloaded|Retrying in|status 5[0-9][0-9]|529|offline|Unable to connect|Failed to connect'
 
@@ -83,7 +92,8 @@ if [ -n "$prompt" ]; then
       *) echo "prompt submission returned: $out (continuing to wait)" >&2 ;;
     esac
   }
-  "$ds" "$m" set step waiting last_prompt "$mode" prompt_sent_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >/dev/null 2>&1 || true
+  sent_epoch=$(date +%s)
+  "$ds" "$m" set step waiting last_prompt "$mode" prompt_sent_at "$(date -u -r "$sent_epoch" +%Y-%m-%dT%H:%M:%SZ)" >/dev/null 2>&1 || true
 fi
 
 "$ds" "$m" set step waiting >/dev/null 2>&1 || true
