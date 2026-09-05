@@ -3,21 +3,19 @@
 **Read this first every session. Rewrite your own lines, never append. Keep under 60 lines.**
 History lives in `docs/journal/`; decisions live in `docs/05-roadmap.md §8`; per-milestone detail lives in `docs/plans/<milestone>.md ## Status`. This file is the index.
 
-_Project section last updated: 2026-09-04 (owner)_
+_Project section last updated: 2026-09-05 (driver, on the owner's instruction)_
 
 ## Project (owner or integration session only)
 
 - **Phase:** 0 — Foundations & spike (`docs/05-roadmap.md §3`). Window Sep 7 → Sep 15, 2026.
-- **Code:** none. Repo is docs only.
-- **Blockers:** owner laptop access for gate probes 0B–0E.
-- **Decisions pending** (inputs in roadmap §8): click dispatch default (G5 → 1A/1C); browser inference vs ONNX-Web (G3/G8 → 1B); launch gesture set (G4 → 1B).
-- **Recently settled:** 2026-09-04 estimation model, milestone as planning unit (roadmap v0.3); 2026-09-04 doc hygiene (this file, `.claude/rules/`, plans, journal).
+- **Code:** 0A (scaffold, harness, `gesture-core` v0), 0B (G1 frame pump), 0C (G2 camera grant) merged to `master` (PRs #1–#3, 2026-09-05). Remaining Phase 0: 0D (G5 click-dispatch survey), 0E (G7 agent latency probe).
+- **Blockers:** owner laptop access for gate probes 0D–0E; owner's API key for 0E.
+- **Decisions pending** (inputs in roadmap §8): §8 rows for 0A interfaces and G1 (0B) = GO not yet logged — owner writes them by hand from the plans' `## Status` (`next 0A` / `next 0B` print the proposed blocks); click dispatch default (G5 → 1A/1C); browser inference vs ONNX-Web (G3/G8 → 1B); launch gesture set (G4 → 1B).
+- **Recently settled:** 2026-09-05 G2 (0C) camera grant = GO (§8); 2026-09-05 G1 (0B) frame pump gate met (`spike-results §G1`, §8 row pending); 2026-09-04 estimation model, milestone as planning unit (roadmap v0.3).
 
 ## Active workstreams (one row per milestone; edit only your row)
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 0A scaffold, harness, `gesture-core` v0 | drv-0A | **Finish DONE.** All 8 tasks shipped; E1 real clean-clone (install/build/test) green; `exit-check 0A` full = 6 PASS 0 FAIL, lock OK; branch pushed to `origin/0A`, CI green. Owner opens the PR to `master` themselves (compare master...0A) — no agent PR; agent does not merge. Owner then logs the §8 proposed decisions (in plan `## Status`) and removes this row on merge. | `docs/plans/0A-scaffold.md` | 2026-09-05 |
-| 0C G2 camera grant probe | drv-0C | **DONE — verified + PR open.** Gate met, owner GO (2026-09-05). Session 2 (finish) re-ran §5 (typecheck/lint/boundary/units all green) + `exit-check 0C` full = **1 PASS 0 FAIL 1 OWNER, lock OK** (E2 Playwright PASS, E1 owner PASS logged in `spike-results §G2`); **PR → `master` open, not merged**. Proposed §8 G2=GO wording under plan `## Status`. Owner: log §8, merge the PR, and remove this row on merge. | `docs/plans/0C-camera-grant.md` | 2026-09-05 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).

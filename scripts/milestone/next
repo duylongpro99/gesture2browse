@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# Post-finish report for driving-a-milestone (docs/tickets/0001): what the
+# driver relays after `finish DONE` instead of computing it in chat.
+#
+#   STATE:          is <M> merged into the base branch yet (log-decision needs it)
+#   PROPOSED-8:     the "Proposed decision(s) for roadmap §8" block under the
+#                   plan's ## Status, verbatim, and whether it holds a §8 table row
+#   READY/BLOCKED:  every unstarted milestone in roadmap §3–6, with each item of
+#                   its Plan inputs cell resolved:
+#                     milestone id  → merged into base? (branch in base, or a
+#                                     merge/squash commit naming it)
+#                     G<n>          → §8 has a non-pending row whose Input names it
+#                     doc / §-ref   → present (CLAUDE.md precondition 4)
+#                     anything else → OWNER (the owner confirms it by hand)
+#
+# The driver acts on the printed lines only; the script writes nothing.
+#
+# Usage: scripts/milestone/next <MILESTONE-ID>        post-finish report for <M> + READY/BLOCKED
+#        scripts/milestone/next                        READY/BLOCKED lines only
+#        scripts/milestone/next --inputs <MILESTONE-ID>  precondition 4 for one milestone
+#                                                        (exit 0 ready, 1 blocked)
+# Reads roadmap and STATUS from the root checkout's working tree (the base
+# branch); the plan from .worktrees/<M> when it exists (the §8 draft lives there
+# until the PR merges), else from the root.
+set -euo pipefail
+mode=report; m=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --inputs) mode=inputs; shift; m=${1:-}; [ -n "$m" ] || { echo "usage: next --inputs <MILESTONE-ID>" >&2; exit 2; } ;;
+    -*) echo "unknown flag $1" >&2; exit 2 ;;
+    *) m=$1 ;;
+  esac
+  shift
+done
+root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+roadmap="$root/docs/05-roadmap.md"; status_md="$root/docs/STATUS.md"
+[ -f "$roadmap" ] && [ -f "$status_md" ] || { echo "no docs/05-roadmap.md or docs/STATUS.md under $root" >&2; exit 3; }
+base=$(git -C "$root" rev-parse --abbrev-ref HEAD)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/next.XXXXXX"); trap 'rm -rf "$tmp"' EXIT
+
+# ---- roadmap: every milestone with its Plan inputs cell (TSV: id, inputs, gate) ----
+# Two forms: a `### x.y Milestone <ID> —` heading followed by a `| **Plan inputs** | … |`
+# row, and a table whose header has a `Plan inputs` column, rows `| **<ID> …** | … |`.
+awk -F'|' '
+  function cell(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+  function strip(s) { gsub(/\*/, "", s); return cell(s) }
+  /^###[ \t]+[0-9]+(\.[0-9]+)*[ \t]+Milestone[ \t]/ {
+    hid = $0; sub(/^###[ \t]+[0-9]+(\.[0-9]+)*[ \t]+Milestone[ \t]+/, "", hid); sub(/[ \t].*$/, "", hid)
+    intable = 0; next
+  }
+  /^###/ { hid = ""; intable = 0; next }
+  hid != "" && $2 ~ /^[ \t]*\*\*Plan inputs\*\*[ \t]*$/ { printf "%s\t%s\t\n", hid, cell($3); hid = ""; next }
+  /^\|/ && !intable {
+    pi = 0; gc = 0
+    for (i = 2; i < NF; i++) { c = strip($i); if (c == "Plan inputs") pi = i; if (c == "Gate") gc = i }
+    if (pi) { intable = 1; hid = "" }
+    next
+  }
+  intable && /^\|[ \t]*-/ { next }
+  intable && /^\|[ \t]*\*\*/ {
+    id = strip($2); sub(/[ \t].*$/, "", id)
+    printf "%s\t%s\t%s\n", id, cell($pi), (gc ? strip($gc) : "")
+    next
+  }
+  intable && !/^\|/ { intable = 0 }
+' "$roadmap" > "$tmp/milestones"
+[ -s "$tmp/milestones" ] || { echo "WARN=no milestone rows with Plan inputs found in $roadmap" >&2; }
+
+# ---- roadmap §8: Input cell and Result cell of every row ----
+awk -F'|' '/^## 8\./{p=1; next} /^## /{p=0} p && /^\|/ && NF >= 5 && $2 !~ /^[ \t]*-+[ \t]*$/ && $2 !~ /Date/ {
+  gsub(/^[ \t]+|[ \t]+$/, "", $4); gsub(/^[ \t]+|[ \t]+$/, "", $5); printf "%s\t%s\n", $4, $5 }' "$roadmap" > "$tmp/s8"
+
+g_logged() { # G<n> → 0 when a non-pending §8 row names it in its Input cell
+  awk -F'\t' -v g="$1" '$1 ~ ("(^|[^A-Za-z0-9])" g "([^0-9]|$)") && tolower($2) !~ /^pending/ { f=1 } END { exit !f }' "$tmp/s8"
+}
+g_producer() { awk -F'\t' -v g="$1" '$3 == g { print $1; exit }' "$tmp/milestones"; }
+
+status_row() { grep -E "^\| \*{0,2}${1}[ *|]" "$status_md" || true; }
+status_owner() { status_row "$1" | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}'; }
+
+# merged: a first-parent merge/squash commit on base names the milestone, or the
+# milestone branch is fully contained in base while its STATUS row is gone, or a
+# GitHub PR from branch <M> into base is merged and its merge commit is on base's
+# first-parent history (rebase merges rewrite SHAs, so the first two paths miss them).
+m_merged() {
+  local id=$1 esc ref oid
+  esc=$(printf '%s' "$id" | sed 's/\./\\./g')
+  # (to a file first: `git log | grep -q` trips pipefail when grep closes the pipe early)
+  [ -f "$tmp/firstparent" ] || git -C "$root" log --first-parent --format='%H %s' "$base" > "$tmp/firstparent" 2>/dev/null || true
+  grep -Eq "^[0-9a-f]+ (\[${esc}\]|Merge (pull request|branch) .*[ /'\"]${esc}['\"]?( |$))" "$tmp/firstparent" && return 0
+  for ref in "refs/heads/$id" "refs/remotes/origin/$id"; do
+    git -C "$root" rev-parse -q --verify "$ref" >/dev/null 2>&1 || continue
+    [ "$(git -C "$root" rev-parse "$ref")" != "$(git -C "$root" rev-parse "$base")" ] || continue
+    git -C "$root" merge-base --is-ancestor "$ref" "$base" 2>/dev/null && [ -z "$(status_row "$id")" ] && return 0
+  done
+  for oid in $(merged_pr_oids "$id"); do
+    grep -q "^$oid " "$tmp/firstparent" && return 0
+  done
+  return 1
+}
+# Merge-commit oids of merged PRs head=<M> base=<base>, via gh; empty when gh or the
+# GitHub remote is missing (tests run on local fixture repos). Cached per id.
+merged_pr_oids() {
+  local id=$1 f="$tmp/pr-$1"
+  [ -f "$f" ] && { cat "$f"; return; }
+  : > "$f"
+  command -v gh >/dev/null 2>&1 || { return; }
+  git -C "$root" remote get-url origin >/dev/null 2>&1 || { return; }
+  (cd "$root" && GH_PROMPT_DISABLED=1 gh pr list --state merged --base "$base" --head "$id" \
+    --json mergeCommit -q '.[].mergeCommit.oid') > "$f" 2>/dev/null || : > "$f"
+  cat "$f"
+}
+m_state() { # merged | active (<owner>) | unstarted   (an `unclaimed` STATUS row is unstarted)
+  local id=$1 o
+  if m_merged "$id"; then echo merged; return; fi
+  o=$(status_owner "$id")
+  case "$o" in ""|unclaimed) echo unstarted ;; *) echo "active ($o)" ;; esac
+}
+
+# ---- one Plan inputs cell → resolved items; prints "READY|BLOCKED: <id> — item; item" ----
+resolve_inputs() {
+  local id=$1 cell=$2 items out="" blocked=0 item ids gs g st i
+  # split on ";", ". " and ","; a "," inside parentheses does not split.
+  # A sentence saying inputs are *not* required ("G3, G4, G6 are not required") is dropped.
+  items=$(printf '%s' "$cell" | awk '{
+    # sentences first (". "), dropping negated ones; bold markers stripped
+    gsub(/\*/, "")
+    n = 0; s = ""
+    for (k = 1; k <= length($0); k++) { c = substr($0, k, 1); nx = substr($0, k + 1, 1)
+      if (c == "." && (nx == " " || nx == "")) { sent[++n] = s; s = "" } else s = s c }
+    sent[++n] = s
+    for (j = 1; j <= n; j++) {
+      if (tolower(sent[j]) ~ /not (required|needed)/) continue
+      d = 0; s = ""
+      for (k = 1; k <= length(sent[j]); k++) { c = substr(sent[j], k, 1)
+        if (c == "(") d++; if (c == ")") d--
+        if (c == ";" || (c == "," && d == 0)) { print s; s = "" } else s = s c }
+      print s } }' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/\.$//' | awk 'NF' || true)
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
+    # milestone ids: 0A, 1D.1; phase-3 tracks 3.4 (only when the item is not a §-reference)
+    ids=$(printf '%s' "$item" | grep -oE '(^|[^A-Za-z0-9])[0-9][A-Z](\.[0-9]+)?' | sed -E 's/^[^0-9]//' | sort -u | tr '\n' ' ' || true)
+    if [ -z "$ids" ] && ! printf '%s' "$item" | grep -q '§'; then
+      ids=$(printf '%s' "$item" | grep -oE '(^|[^A-Za-z0-9.])[0-9]\.[0-9]+' | sed -E 's/^[^0-9]//' | sort -u | tr '\n' ' ' || true)
+    fi
+    gs=$(printf '%s' "$item" | grep -oE '(^|[^A-Za-z0-9])G[0-9]+' | sed -E 's/^[^G]//' | sort -u | tr '\n' ' ' || true)
+    if [ -n "$ids" ]; then
+      for i in $ids; do
+        st=$(m_state "$i")
+        case "$st" in
+          merged) out="$out$i merged; " ;;
+          *) blocked=1; out="$out$i $st, not merged; " ;;
+        esac
+      done
+    elif [ -n "$gs" ]; then
+      for g in $gs; do
+        if g_logged "$g"; then out="$out$g logged; "
+        else blocked=1; p=$(g_producer "$g"); out="$out$g pending${p:+ ($p)}; "; fi
+      done
+    elif printf '%s' "$item" | grep -Eiq 'doc|\.md|§|no gate'; then
+      out="$out$item (doc, present); "
+    else
+      blocked=1; out="$out$item (OWNER); "
+    fi
+  done <<EOF
+$items
+EOF
+  out=$(printf '%s' "$out" | sed 's/; $//')
+  [ -n "$out" ] || out="(no plan inputs cell)"
+  if [ $blocked = 1 ]; then echo "BLOCKED: $id — $out"; return 1; fi
+  echo "READY: $id — $out"
+}
+
+inputs_of() { awk -F'\t' -v id="$1" '$1 == id { print $2; exit }' "$tmp/milestones"; }
+
+# ---- --inputs <M>: precondition 4 ----
+if [ "$mode" = inputs ]; then
+  cell=$(inputs_of "$m")
+  [ -n "$cell" ] || { echo "WARN=no roadmap row with Plan inputs names $m"; exit 1; }
+  if resolve_inputs "$m" "$cell"; then exit 0; else exit 1; fi
+fi
+
+# ---- report ----
+if [ -n "$m" ]; then
+  wt="$root/.worktrees/$m"
+  slug=$(status_row "$m" | sed -n 's|.*docs/plans/\([A-Za-z0-9._-]*\)\.md.*|\1|p'); [ -n "$slug" ] || slug=$m
+  plan=""
+  for d in "$wt" "$root"; do
+    [ -d "$d" ] || continue
+    if [ -f "$d/docs/plans/$slug.md" ]; then plan="$d/docs/plans/$slug.md"; break; fi
+    for f in "$d"/docs/plans/"$m"*.md; do
+      [ -f "$f" ] || continue
+      case "$f" in *.spec.md|*.impl.md) ;; *) plan=$f; break 2 ;; esac
+    done
+  done
+  printf '===== next %s  (root %s @ %s; plan %s)\n' "$m" "$root" "$base" "${plan:-none}"
+  st=$(m_state "$m")
+  case "$st" in
+    merged) echo "STATE: $m merged into $base — log-decision may run" ;;
+    *) echo "STATE: $m $st, not merged into $base — owner merges the PR first; log-decision refuses until then" ;;
+  esac
+  if [ -n "$plan" ]; then
+    awk '/^## Status/{s=1} s && /^\*\*Proposed decisions? for roadmap §8/{p=1} p && /^[ \t]*$/ && n {exit} p {print; n++}' "$plan" > "$tmp/block"
+    if [ -s "$tmp/block" ]; then
+      echo "PROPOSED-8:"; cat "$tmp/block"
+      if grep -Eq '^(> *)?\|([^|]*\|){4,}' "$tmp/block"; then
+        echo "PROPOSED-8-ROW: ok (a §8 table row; scripts/milestone/log-decision $m can apply it on the owner's approval)"
+      else
+        echo "PROPOSED-8-ROW: none (the block is not a §8 table row; the owner writes the row by hand, log-decision cannot apply it)"
+      fi
+    else
+      echo "PROPOSED-8: none (no \"Proposed decision(s) for roadmap §8\" block under ## Status in $plan)"
+    fi
+  else
+    echo "PROPOSED-8: none (no plan file for $m)"
+  fi
+  r=$(status_row "$m"); [ -n "$r" ] && echo "STATUS-ROW: present (removed by log-decision --apply, or by the owner)" || echo "STATUS-ROW: absent"
+  echo
+fi
+
+echo "NEXT: unstarted milestones (roadmap §3–6 Plan inputs vs merged branches and §8):"
+ready=0; blocked=0
+while IFS=$'\t' read -r id cell gate; do
+  [ -n "$id" ] || continue
+  case "$(m_state "$id")" in unstarted) ;; *) continue ;; esac
+  if resolve_inputs "$id" "$cell"; then ready=$((ready + 1)); else blocked=$((blocked + 1)); fi
+done < "$tmp/milestones"
+echo "summary: $ready ready, $blocked blocked"
