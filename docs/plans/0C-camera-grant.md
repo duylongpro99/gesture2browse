@@ -108,6 +108,12 @@ _Owned by the 0C session; rewritten, not appended._
 **Proposed decision for roadmap §8 (owner logs; agent does not edit §8):**
 > | 2026-09-05 | **G2 (0C) camera grant = GO.** Full-tab grant page moves the extension origin to a persistent camera grant that the offscreen document inherits across a Chrome restart with no prompt; a `background.ts` `navigator.permissions.query` pre-check gates every offscreen start and routes to the grant page when not granted; Chrome's "Allow this time" is detected (cross-session, `persistent:false`), not mistaken for a persistent grant. Finding: the MV3 service worker **can** answer `permissions.query({name:'camera'})` (direct SW query; stored-`CameraGrantStatus` fallback retained). Consumed by 1D.1 onboarding. | G2 (0C): E2 Playwright (pre-granted) + E1 owner restart/"Allow this time" | Recorded in `spike-results.md §G2` |
 
-**Blockers:** none — E1/E1b PASS, owner GO. Handoff `DONE`.
+**Done (session 2, finish):** verified the integration tree (3cd064f) and opened the PR to `master` — no code changes (finish scope holds no code paths).
+- `pnpm typecheck` 7/7, `pnpm lint` 5/5 + `boundary-lint: OK`; units green (gesture-core 13, protocol 28, extension 12); no thresholds changed ⇒ no fixture replay.
+- `scripts/milestone/exit-check 0C` (full): **1 PASS 0 FAIL 1 OWNER 0 other | lock OK** — E2 (Exit-checks row, mechanical, pre-granted Playwright) PASS; E1 (owner Chrome-restart) OWNER, logged PASS in `spike-results.md §G2`. Lock frozen at 3cd064f.
+- Roadmap 0C exit criteria: **Exit** "Owner's Chrome-restart check logged" met (E1a/E1b PASS); **Agent verification** "Playwright with pre-granted permissions" met (E2 PASS). No "Interfaces fixed here".
+- PR opened to `master` with `gh` (URL in `docs/sdd/0C/handoff.md` `evidence`). **Not merged** — owner merges after logging §8.
 
-**Superpowers conflicts noted (`CLAUDE.md §6`):** none.
+**Blockers:** none — E1/E1b PASS, owner GO, PR open. Handoff `DONE`.
+
+**Superpowers conflicts noted (`CLAUDE.md §6`):** finishing skill's integration menu is overridden by the session-2 brief (fixed to "push + PR to `master`, never merge"); `CLAUDE.md`/brief win over the skill.
