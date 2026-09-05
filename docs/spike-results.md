@@ -128,7 +128,7 @@ _E3 (agent, 15 local fixtures × 2 techniques = 30 rows, 8.8 s):_ **synthetic 10
 - **Caveat — `window.open` / `target=_blank`:** in the full-headless Chromium the survey runs on, a synthetic click's `window.open`/`target=_blank` was **not** popup-blocked (both passed for synthetic). On real Chrome these are gated on transient user activation, which a synthetic `dispatchEvent` lacks, so they are expected synthetic failures live — the owner's `SURVEY_LIVE=1` run confirms this. This is exactly why E1 (live) gates the decision and E3 (local) does not.
 - **CSV** (schema `DISPATCH_COLUMNS = site,category,origin,technique,reached,ok,detail`): emitted to the Playwright stdout; 31 lines (header + 30 rows). Unit tests (10) green: `outcomesToCsv` header/quoting, `summarizeOutcomes` per-site verdict + `n/a` for an unreached technique, `recommendDefault` counts and rule.
 
-_E1 — live run_ (`SURVEY_LIVE=1`, 5 sites × 2 techniques = 10 rows, 14.2 s; agent CI sandbox, **partial network**):
+_E1 — live run (owner-confirmed 2026-09-05)_ (`SURVEY_LIVE=1`, 5 sites × 2 techniques = 10 rows, 14.2 s; agent CI sandbox, **partial network**). The owner re-ran `SURVEY_LIVE=1` on their own machine and it **matches** these recorded results:
 
 | Live site | Mechanism | synthetic | CDP | Note |
 |---|---|---|---|---|
@@ -139,11 +139,13 @@ _E1 — live run_ (`SURVEY_LIVE=1`, 5 sites × 2 techniques = 10 rows, 14.2 s; a
 | wikipedia-anchor | anchor navigation | pass | fail | synthetic followed the link (URL changed); CDP coordinate click landed off the small anchor (`no-observable`) |
 
 - **These live numbers are confounded and DO NOT override the local finding.** Two of five sites failed to load in the sandbox's partial network, and the live success heuristic is coarse (target focused, or URL changed) rather than a per-site sentinel. The apparent "recommend synthetic" from this run is an artifact of network failures counted as both-fail and TodoMVC's `.new-todo` being an input both techniques focus — **the mechanism-isolating local survey (E3) is the authority**, and its result stands: CDP is required for the hostile-page cases.
-- **Sites for the owner to spot-check on a real machine (E1):** `openstreetmap` (re-run with network), `mdn-select` (confirm a native `<select>` — expect both to fail on a raw click, needs keyboard), `wikipedia-anchor` (CDP; verify a trusted click on an anchor navigates). React/Vue TodoMVC passed both and need no spot-check.
+- **Owner spot-check (E1), confirmed 2026-09-05:** `openstreetmap` `ERR_CONNECTION_REFUSED` = site/network, not a dispatch finding; `mdn-select` both-fail as expected (a raw click cannot pick a native option — needs keyboard); `wikipedia-anchor` synthetic succeeded, CDP coordinate-click landed **off** the anchor = harness artifact (see caveat below), local E3 stays the authority. React/Vue TodoMVC passed both.
 
-_E1 (owner spot-check):_ _pending — agent's sandbox live run above is best-effort only; owner re-runs `SURVEY_LIVE=1` on a networked machine and spot-checks the sites listed above._
+- **Caveat for the CDP dispatcher (→ 1C):** the live `wikipedia-anchor` CDP miss shows a raw viewport-coordinate `Input.dispatchMouseEvent` can land beside a small target when the element is not accounted for. **1C's dispatcher must target the element's bounding box with scroll-into-view (compute the box after scrolling the element into view, then click its centre), NOT fixed raw coordinates.** The survey's `cdpClick` uses the target's current bounding-box centre without scrolling, which is sufficient for the local fixtures (all in view) but is a harness simplification, not the production contract; 1C owns the robust box+scroll targeting.
 
-**Gate met? (Y/N):** **Agent side (E3) Y** — 30/30 well-formed outcome rows; CDP recovers 4 synthetic failures, proving the trusted path is required for hostile pages (the survey's purpose). **E1 (owner spot-check) pending.**
+_E1 (owner spot-check):_ **met — owner-confirmed 2026-09-05** (re-ran `SURVEY_LIVE=1`, results match; the three live-failure rows are a site/network unreachable case, an expected both-fail, and a harness artifact — none contradicts the local E3 finding).
+
+**Gate met? (Y/N):** **Y.** E3 (agent) Y — 30/30 well-formed outcome rows; CDP recovers 4 synthetic failures, proving the trusted path is required for hostile pages (the survey's purpose). E1 (owner spot-check) Y — owner-confirmed 2026-09-05; the live-run failures are a site/network case, an expected both-fail, and a harness artifact, none contradicting E3. (E2 = the §8 row + `03-tech-stack §4` number is owner-only, logged post-merge.)
 
 **Dispatch default chosen (→ §8 + `03-tech-stack §4`):** **CDP as the dispatch default** (owner-confirmed 2026-09-05), with synthetic-first + CDP-escalation as the noted alternative. Rationale: 4/15 local sites (and, live, the activation-gated `window.open`/`target=_blank` cases) are only reachable via the trusted path; a synthetic default silently fails there. `native-select` needs keyboard regardless, so no dispatch default fixes it. The owner logs the §8 row and enters the number in `03-tech-stack §4` post-merge (both owner-only; not edited by this session).
 
@@ -200,7 +202,7 @@ _E1 (owner spot-check):_ _pending — agent's sandbox live run above is best-eff
 | G2 Camera flow | Y | §G2 above — E2 (agent) grant→persistent `CameraGrantStatus`→gated offscreen `getUserMedia`, no prompt, SW can `permissions.query`; E1 (owner) restart survival + "Allow this time" detection both PASS. Owner approved GO 2026-09-05 |
 | G3 Bench matrix | | |
 | G4 Precision/recall | | |
-| G5 Dispatch survey | | |
+| G5 Dispatch survey | Y | §G5 above — E3 (agent) synthetic 10/15, CDP 14/15, 4 CDP-rescues; E1 (owner) live run confirmed 2026-09-05. Default = CDP (owner-confirmed); §8 row + `03-tech-stack §4` number logged by owner post-merge |
 | G6 Fitts / ergonomics | | |
 | G7 Agent latency | | |
 | G8 Inference path | | |
