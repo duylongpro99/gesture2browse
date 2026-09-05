@@ -47,6 +47,20 @@ node scripts/fixtures/play.ts gestures/placeholder.json # replay -> prints Inten
 resolvable from the repo root (root `package.json` `devDependencies`, `workspace:*`).
 `generate-placeholder-y4m.ts` has no imports and runs as-is.
 
+## Bench model and wasm (no CDN)
+
+The bench harness (`apps/playground`, exit check E3) runs MediaPipe `HandLandmarker`
+locally — never from a CDN (`03-tech-stack §2, §6`):
+
+- **`hand_landmarker.task`** (repo root) — the MediaPipe hand-landmark model,
+  `float16/1`, from
+  `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`.
+  Committed once at the repo root and shared with the extension (0B). Regenerate
+  by re-downloading that URL.
+- **wasm runtime** — shipped by the pinned `@mediapipe/tasks-vision` package; the
+  playground `vite.config.ts` serves it (and the model) under `/models/` for the
+  dev and preview servers, so the harness stays offline and CSP-clean.
+
 ## Real recordings
 
 The live-camera recorder that writes these JSON records is the playground
