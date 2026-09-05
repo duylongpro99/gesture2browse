@@ -78,7 +78,7 @@ Close milestone <M>: verify, finish the branch, open the PR to `<BASE>`.
 
 ## Steps
 1. `obra-verification-before-completion` = `CLAUDE.md §5` commands (tsc, lint, boundary check, unit tests, fixture replay if thresholds changed). When the row's exit says "from a clean clone", clone into `$TMPDIR` and run there. Then `scripts/milestone/exit-check <M>` (full; it clones for `clean-clone` rows) and put its `summary:` line in `evidence`. Any `FAIL` or `TAMPERED` → `BLOCKED` with the row and its tail lines; this role never fixes a failing check and never edits `## Exit checks` or a contract test.
-2. `obra-finishing-a-development-branch`: check each exit criterion of the roadmap row, rewrite the STATUS row and plan `## Status`, list proposed §8 decisions under `## Status`, open a PR to `<BASE>` with `gh`. Never merge.
+2. `obra-finishing-a-development-branch`: check each exit criterion of the roadmap row, rewrite the STATUS row and plan `## Status`, list proposed §8 decisions under `## Status` as a paragraph headed `**Proposed decision(s) for roadmap §8 (owner logs; agent does not edit §8):**` whose first line after the heading is one complete §8 table row in a blockquote, `> | <YYYY-MM-DD> | <decision> | <input: the gate and milestone, e.g. G5 (0D): …> | <result> |` (`scripts/milestone/log-decision` applies exactly that row on the owner's approval; a bullet list cannot be applied), open a PR to `<BASE>` with `gh`. Never merge.
 3. `outcome: DONE` with the PR URL and one `evidence` line per exit criterion; a failing check → `BLOCKED` with the failing output in `evidence`. Your scope holds no code paths: you cannot fix a check, and must not try.
 ```
 

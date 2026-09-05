@@ -32,7 +32,7 @@ When a plan cannot satisfy one of these, stop and surface it. Do not "start with
 
 Owned by the session on this milestone; rewritten, not appended.
 - Done / In progress / Next
-- Proposed decisions for roadmap §8 (owner logs them; the agent does not edit §8)
+- Proposed decisions for roadmap §8 (owner logs them; the agent does not edit §8): a paragraph headed `**Proposed decision(s) for roadmap §8 (owner logs; agent does not edit §8):**`, then the complete §8 table row in a blockquote (`> | date | decision | input | result |`) so `scripts/milestone/log-decision` can apply it on the owner's approval after the merge
 - Blockers
 
 `docs/STATUS.md` holds only the one-sentence summary row that points here.

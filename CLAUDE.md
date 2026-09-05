@@ -19,7 +19,7 @@ Start every session with `docs/STATUS.md` (one page: phase, milestone, plan, nex
 
 Never read at start: `docs/journal/`, `docs/sdd/` (except your own ledger), `04-feasibility`, `05-roadmap`, past ADRs. One fact from a big doc → Explore subagent, keep the conclusion.
 
-**Writes.** Top-level session only, at session end: rewrite (never append) your row in `docs/STATUS.md` and `## Status` in `docs/plans/<milestone>.md`; history goes to `docs/journal/YYYY-MM-DD-<milestone>.md`. Subagents write only their own `task-N-report.md`. One session per milestone, in its own worktree, after claiming its STATUS row. Roadmap §8 and the STATUS Project section are owner-only.
+**Writes.** Top-level session only, at session end: rewrite (never append) your row in `docs/STATUS.md` and `## Status` in `docs/plans/<milestone>.md`; history goes to `docs/journal/YYYY-MM-DD-<milestone>.md`. Subagents write only their own `task-N-report.md`. One session per milestone, in its own worktree, after claiming its STATUS row. Roadmap §8 and the STATUS Project section are owner-only; the one exception is the `driving-a-milestone` driver running `scripts/milestone/log-decision --apply` on the owner's recorded approval, which logs a merged milestone's drafted §8 row and removes its STATUS row (§6).
 
 ## 1. Plan before code
 
@@ -47,6 +47,6 @@ Plan (§1) followed, or an ADR explains the difference · `tsc`, lint, boundary 
 
 Skills are `.claude/skills/obra-<name>`, symlinks into a shared kit: never edit the kit; overrides live here and in `docs/plans/README.md §Superpowers`. Superpowers governs *how* a session works; this file and `.claude/rules/` govern *what is allowed*. On conflict this file wins; note it in the plan `## Status`.
 
-`driving-a-milestone` (repo-local, `.claude/skills/driving-a-milestone/`, scripts in `scripts/milestone/`) automates the §0 session loop: a driver session spawns one worker per phase in the milestone worktree through `cris-managed-session` and relays owner gates. Driver plus one worker at a time counts as the milestone's one session; the driver writes only the STATUS claim and session briefs.
+`driving-a-milestone` (repo-local, `.claude/skills/driving-a-milestone/`, scripts in `scripts/milestone/`) automates the §0 session loop: a driver session spawns one worker per phase in the milestone worktree through `cris-managed-session` and relays owner gates. Driver plus one worker at a time counts as the milestone's one session; the driver writes only the STATUS claim, session briefs, and, after the PR merges and the owner says "apply", the §8 row plus STATUS-row removal through `scripts/milestone/log-decision`. Precondition and post-finish readiness come from `scripts/milestone/next`, never from the driver reading the roadmap.
 
 Superpowers writes only into `docs/`: spec → `docs/plans/<milestone>.spec.md`, plan → `.impl.md`, SDD workspace → `docs/sdd/<milestone>/`. A hook denies `.superpowers/` and `docs/superpowers/`. Run `scripts/sdd/<name>` from the repo root, never "this skill's `scripts/`". Do not pass `--project-dir` to the brainstorming visual companion. Per-skill overrides (bounded brainstorm cannot reopen placement or interfaces; reviewer adds a boundary gate; TDD in `gesture-core` = fixture replay; verification = §5 commands; finishing = §5 and never edits §8): `docs/plans/README.md §Superpowers`.

@@ -9,7 +9,7 @@ description: Use when the owner asks to run, drive, or automate a roadmap milest
 
 This session becomes the **driver** for one milestone. It never writes code, plans, or docs. It spawns one worker Claude Code session per phase inside the milestone's worktree, hands it a self-contained brief, waits, reads the worker's `handoff.md`, and either continues, relays an owner question, or stops. The owner talks only to the driver, except to click a Claude Code dialog in a pane.
 
-Driver plus one worker at a time **is** the "one session per milestone" of `CLAUDE.md §0` (`CLAUDE.md §6`). The driver's only repo writes: the STATUS claim (`scripts/milestone/claim`), and, through the scripts, `session-*-brief.md` and `driver.json` under `docs/sdd/<M>/` (gitignored). The driver may read roadmap §3–6, §8 for the milestone row, and §9 for its re-plan triggers; a worker reads only what its brief names.
+Driver plus one worker at a time **is** the "one session per milestone" of `CLAUDE.md §0` (`CLAUDE.md §6`). The driver's only repo writes: the STATUS claim (`scripts/milestone/claim`), the post-finish §8 row and STATUS-row removal (`scripts/milestone/log-decision --apply`, only on the owner's recorded approval), and, through the scripts, `session-*-brief.md` and `driver.json` under `docs/sdd/<M>/` (gitignored). The driver may read roadmap §3–6, §8 for the milestone row, and §9 for its re-plan triggers; a worker reads only what its brief names.
 
 **Driver memory is on disk, not in this chat.** `docs/sdd/<M>/driver.json` (`scripts/milestone/driver-state <M> get`) holds pane, session `N`, role, base SHA, the loop step, the last wait result and outcome, nudges sent, and owner answers pending delivery. `claim`, `spawn`, `brief`, `wait`, `status` write it; the driver never edits it by hand except `driver-state <M> add answers '{"question":…,"answer":…}'`. Consequences: never keep a pane id, `N`, or an answer only in your head; never read `references/briefs.md` (`brief` fills it) or a `status-*.txt` dump unless a VERDICT line points at it; when this conversation grows long, say so and tell the owner it is safe to `/compact` or to open a fresh driver and say "resume <M>" (see **Resume**). A gate costs the same tokens whether it is the first or the tenth.
 
@@ -20,7 +20,7 @@ Driver plus one worker at a time **is** the "one session per milestone" of `CLAU
 1. `test "$HERDR_ENV" = 1`; `.claude/skills/cris-managed-session/scripts/create-session.sh` exists and is executable.
 2. `git status --porcelain --untracked-files=no` is empty on the base branch (the branch PRs target; you are on it).
 3. `docs/STATUS.md` has a row for `<M>` whose owner cell is `unclaimed` or `drv-<M>`.
-4. The roadmap row's **plan inputs**: every item that is a §8 decision row must not read `pending`. Items that name a doc count as present. A pending §8 input → name it, stop; the owner logs §8.
+4. `scripts/milestone/next --inputs <M>` prints one line: `READY: <M> — …` (exit 0) or `BLOCKED: <M> — …` (exit 1) with every item of the roadmap row's **Plan inputs** cell resolved (a milestone id → merged into the base branch or not; `G<n>` → its §8 row logged or `pending`; a doc → present; anything else → `OWNER`). `BLOCKED` → relay the line verbatim, stop; the owner logs §8, merges, or confirms the `OWNER` item and says proceed. Never resolve an input by reading the roadmap yourself.
 5. `.claude/settings.local.json` exists in the root checkout with the owner's allowlist (git, pnpm, gh, tsc, vitest, playwright). Without it, every worker commit is a permission dialog; say so and let the owner decide before spawning.
 6. `grep -q guard-scope.sh .claude/settings.json` succeeds and `scripts/hooks/guard-scope.sh` is executable. Without the hook the scope is only a request; stop and say so.
 7. `grep -q require-handoff.sh .claude/settings.json` succeeds and `scripts/hooks/require-handoff.sh` is executable (the Stop hook that makes a worker finish its handoff after a cut connection). Without it a disconnect always ends at the owner; say so, the owner decides.
@@ -57,12 +57,19 @@ Role order: `plan`, `execute` (repeat while `CONTINUE`), `finish`. Gate probes (
 |---|---|
 | `NEEDS-OWNER` | Put the questions to the owner verbatim (`AskUserQuestion` when they are choices). Record each answer: `scripts/milestone/driver-state <M> add answers '{"question":"…","answer":"…"}'`. Send the *answers* message from `references/briefs.md` (the one-line form quoted under **Messages** below) to the **same pane**: `scripts/milestone/wait <M> --answers "<message>"` in the background. Back to step 4's table. If the pane is gone, step 2: `brief` writes the "Previous answers" section from `driver.json`. A question of the form `path — reason` is a denied write: the owner's options are (a) add the path to the task's `**Files:**` block in `.impl.md` (or the probe plan) in the worktree themselves, then `stop-session.sh` and step 2 (spawn re-derives the scope); (b) tell the worker to do without; (c) re-plan. Never edit `.claude/scope.json`, the plan, or the hook for them. |
 | `CONTINUE` | Read `exit-progress` in the handoff. Any `at risk` line → treat as `NEEDS-OWNER`: relay the line verbatim with the worker's reason, the owner decides whether to continue, re-plan, or stop. Else `stop-session.sh <PANE>`. Step 2 with the same role. |
-| `DONE` | Check the role's artifacts against the `ARTIFACTS:` line (plan: `spec=yes impl=yes plan=yes exit-checks-table=yes ledger=yes`, then the **plan gate** under Exit checks; execute: `unfinished-tasks=0` **and** `exit-progress-lines` equal to the table rows with `at-risk=0`; finish: `pr-url=` set, or the owner has said they open the PR themselves). Short → treat as `BLOCKED`. An `at risk` line → treat as `NEEDS-OWNER` as above; a `not yet` line after execute → the owner chooses between another `execute` session and `finish`. Else `stop-session.sh <PANE>`, next role. After `finish`: report the PR URL and `evidence` to the owner, stop. |
+| `DONE` | Check the role's artifacts against the `ARTIFACTS:` line (plan: `spec=yes impl=yes plan=yes exit-checks-table=yes ledger=yes`, then the **plan gate** under Exit checks; execute: `unfinished-tasks=0` **and** `exit-progress-lines` equal to the table rows with `at-risk=0`; finish: `pr-url=` set, or the owner has said they open the PR themselves). Short → treat as `BLOCKED`. An `at risk` line → treat as `NEEDS-OWNER` as above; a `not yet` line after execute → the owner chooses between another `execute` session and `finish`. Else `stop-session.sh <PANE>`, next role. After `finish`: `scripts/milestone/driver-state <M> set step finished`, report the PR URL and `evidence` to the owner, then step 7. |
 | `BLOCKED` | `stop-session.sh <PANE>`. Report `summary`, `evidence`, `next` verbatim. Stop the loop. |
 
 **Messages** (driver → same pane, always through `scripts/milestone/wait <M> --answers "…"` or `--prompt "…"`, never a bare `herdr agent prompt`): the answers message and the handoff-format message are quoted in `references/briefs.md`; `--brief` and `--nudge` compose their own. A worker prompt is always one line; everything else belongs in the brief.
 
 6. **Re-plan check.** Before spawning the next role, read the roadmap §9 rows for this phase. A trigger that names `<M>` in its response and has fired (a gate result in `docs/spike-results.md`, an owner message, or an `exit-progress` line) → stop, report the row verbatim, the owner re-plans; never fold a §9 response into a brief yourself.
+
+7. **Post-finish** (after finish `DONE`; `docs/tickets/0001`). Run `scripts/milestone/next <M>` from the root checkout and relay its lines verbatim, in this order:
+   1. `STATE:` not merged → tell the owner the PR is theirs to merge, then stop; on "merged" (or a later "resume <M>"), `git pull --ff-only` in the root checkout and re-run `next <M>`. Never merge.
+   2. `PROPOSED-8:` quote the block. `PROPOSED-8-ROW: ok` → run `scripts/milestone/log-decision <M>` (dry run) and show its `INSERT:` / `REPLACE:` / `KEEP:` / `STATUS-ROW:` lines and the `DIFF:`; `AskUserQuestion`: apply, or the owner edits by hand. Only on "apply": record it (`driver-state <M> add answers '{"question":"log-decision <M>","answer":"apply"}'`), then `scripts/milestone/log-decision <M> --apply` (one `[docs]` commit on the base branch: the §8 row, the covered `pending` rows removed, the STATUS row removed). `PROPOSED-8-ROW: none` → the owner writes the row by hand; say so, do not compose one.
+   3. `READY:` / `BLOCKED:` lines and `summary:` → relay verbatim. A `READY` milestone is the owner's next "run <M>"; a `BLOCKED` line names what is missing (`pending (0D)`: that gate's milestone runs first; `(OWNER)`: the owner supplies it). Never start the next milestone on your own.
+
+   The driver still writes nothing by hand: `log-decision --apply` is the one §8 / STATUS-row write, and only on the owner's recorded "apply".
 
 ## Resume (after compaction, a new driver session, or a laptop sleep)
 
@@ -75,6 +82,8 @@ The owner says "resume <M>", or precondition 8 found `driver.json`. Run precondi
 | `waiting` | a prompt was sent, the wait was interrupted | `scripts/milestone/wait <M>` (no flag): it settles or classifies like step 4 |
 | `gate` | the worker settled; `wait_result` / `last_outcome` say how far the reading got | `wait_result=handoff` → Loop step 5; any other `wait_result` → its row in step 4's table |
 | `stopped` | the pane was closed after an outcome | `last_outcome=CONTINUE` → step 2 same role; `DONE` → step 2 next role (plan → check the lock is `FROZEN` first); `BLOCKED` → report and stop |
+| `finished` | finish `DONE` was reported; §8 not logged yet | Loop step 7 (`next <M>`; `STATE:` decides whether `log-decision` may run) |
+| `logged` | `log-decision --apply` ran | `scripts/milestone/next` (no `<M>`): relay the `READY:` / `BLOCKED:` lines, stop |
 
 `driver-state <M> get answers` shows owner answers; `delivered: true` ones reached a worker. Never reconstruct state from this chat when `driver.json` disagrees; `driver.json` wins. If `driver.json` and `.claude/scope.json` disagree on `session`, stop and show the owner both.
 
@@ -104,7 +113,7 @@ The plan session turns the roadmap row's **Exit** and **Interfaces fixed here** 
 
 ## Owner gates (stop and ask; never proxy the owner)
 
-Pending §8 plan input · brainstorm questions · a roadmap task whose verification cell names the owner · an ADR draft · any Claude Code dialog in a pane · PR merge · §8 entries · removing the STATUS row after merge · the `## Exit checks` table and contract tests before `--freeze` · every `TAMPERED`, `DISAGREE`, `OWNER-CLAIM` line · spawning `audit`.
+`BLOCKED` plan input (`next --inputs`) · brainstorm questions · a roadmap task whose verification cell names the owner · an ADR draft · any Claude Code dialog in a pane · PR merge · §8 entries and removing the STATUS row after merge (owner by hand, or `log-decision --apply` on the owner's recorded "apply"; never a hand edit by the driver) · the `## Exit checks` table and contract tests before `--freeze` · every `TAMPERED`, `DISAGREE`, `OWNER-CLAIM` line · spawning `audit` · starting the next milestone after a `READY:` line.
 
 ## Driving a phase
 
@@ -127,4 +136,6 @@ Pending §8 plan input · brainstorm questions · a roadmap task whose verificat
 - Reopening a pane after `stop-session.sh` instead of writing a resume brief.
 - Spawning the next role while `status` shows an `OUT-OF-SCOPE:`, `COMMIT-CHECK:` or `HISTORY:` line, or a `WARN=` line the owner has not seen.
 - Editing `.claude/scope.json`, a `**Files:**` block, or `scripts/hooks/` to let a worker through. The owner widens a plan; nobody widens a scope.
-- Merging, editing `§8`, removing the STATUS row. Owner only.
+- Merging. Owner only. Editing `§8` or removing the STATUS row by hand, or running `log-decision --apply` without the owner's recorded "apply".
+- Composing a §8 row when `PROPOSED-8-ROW: none`, or resolving a plan input by reading the roadmap instead of `next --inputs`.
+- Reporting finish `DONE` without step 7, or starting a `READY` milestone the owner has not asked for.
