@@ -31,10 +31,12 @@ The thesis: **gestures are great for pointing, selecting, and confirming, and ba
 |---|---|---|
 | **Maya — motor impairment / RSI** | Limited fine motor control, cannot use a mouse for long periods; can lift a hand and make coarse gestures | Large effective targets (semantic snapping), low fatigue, reliable clutch, no false clicks, works with screen reader |
 | **Duc — hands busy** | Cooking from a recipe, working in a workshop or lab with gloves/dirty hands, following a manual | Scroll, back, next-step, zoom without touching the laptop; tolerant of poor lighting and partial hand views |
-| **Priya — presenter / large display** | Standing 1–3 m from a screen during a demo or in a meeting room | Navigation and clicking from a distance, visible cursor, quick pause |
+| **Priya — presenter / large display** *(deferred to Phase 3)* | Standing 1–3 m from a screen during a demo or in a meeting room | Navigation and clicking from a distance, visible cursor, quick pause |
 | **Developer / power user (secondary)** | Wants to try gesture+agent workflows, assign custom gestures, script actions | Custom gesture training, action mapping, open architecture |
 
 Primary persona for MVP: **Maya.** Accessibility constraints produce the strictest requirements, and everything built for them serves the other personas.
+
+**v1 operating range: ≤ 1.5 m from the camera.** The MediaPipe palm detector is trained for < 2 m and unreliable beyond ~1.5 m at 720p, so the presenter persona (Priya, 1–3 m) moves to Phase 3 with a pose-based design (body landmarks, large poses, dwell instead of pinch). See 04-feasibility §2 B2.
 
 ## 4. Goals and non-goals
 
@@ -65,7 +67,7 @@ Primary persona for MVP: **Maya.** Accessibility constraints produce the stricte
 
 **S5 — Guarded action.** The agent, mid-task, reaches a "Place order" button. It stops, shows what it is about to do, and waits. Only a thumbs-up gesture held for 600 ms proceeds. Anything else, or a timeout, cancels.
 
-**S6 — Presenting (Priya).** Priya stands 2 m from a TV. The extension detects the hand at small scale and increases pointer gain. Swipes move through slides in a web deck; pinch clicks embedded video controls.
+**S6 — Presenting (Priya, deferred to Phase 3).** Priya stands 2 m from a TV. The extension detects the hand at small scale and increases pointer gain. Swipes move through slides in a web deck; pinch clicks embedded video controls. *This scenario is out of v1 scope (range > 1.5 m); it returns in Phase 3 with a pose-based design.*
 
 ## 6. Gesture vocabulary (v1)
 
@@ -76,17 +78,19 @@ Built on the seven MediaPipe canned gestures plus geometric gestures derived fro
 | **Open palm, hold 1 s** | `Open_Palm` + stillness | Clutch: toggle tracking armed/paused | The only gesture active while paused. Visual + audio confirmation. |
 | **Index point** | `Pointing_Up` or index extended | Pointer mode; index fingertip (landmark 8) drives cursor | Cursor snaps to nearest interactable element within a radius |
 | **Pinch (tap)** | thumb tip (4) – index tip (8) distance below threshold, normalized to hand size, < 300 ms | Click snapped element | Hysteresis: pinch-in threshold tighter than pinch-out |
+| **Dwell (hold still)** | pointer held within a small radius over a snapped target for the dwell time (default 600 ms), progress ring | Click snapped element | MVP click mode alongside pinch, for users who cannot pinch (04-feasibility B5); default in the Accessibility profile |
 | **Pinch, hold** | pinch > 300 ms | Drag / long-press; in a text field → start voice input (Phase 2) | |
 | **Double pinch** | two taps < 400 ms apart | Double-click | Optional, default off |
 | **Closed fist + move** | `Closed_Fist` + wrist displacement | Scroll (grab-and-drag with inertia) | Vertical primary; horizontal when page overflows |
 | **Open palm swipe left / right** | `Open_Palm` + lateral wrist velocity > threshold | Browser back / forward | Requires velocity and displacement; single fire per swipe |
 | **Open palm swipe up / down** | `Open_Palm` + vertical velocity | Next / previous tab | Default off in accessibility profile (too easy to trigger) |
-| **Victory ✌️** | `Victory` held 500 ms | Open agent panel / command palette with context suggestions | |
-| **Thumbs up 👍** | `Thumb_Up` held 600 ms | Confirm current agent proposal | Hold time is the safety mechanism |
-| **Thumbs down 👎** | `Thumb_Down` held 600 ms | Reject proposal / undo last agent action / dismiss | |
+| **Victory ✌️** | Victory geometry (index+middle extended, others folded), independent of palm orientation, held 600 ms | Open agent panel / command palette with context suggestions | Detected by finger geometry, not the canned `Victory` label, so the palm-inward V (obscene in some regions) is still recognized |
+| **Thumbs up 👍** | `Thumb_Up` held 700–800 ms | Confirm current agent proposal | Hold time is the safety mechanism; visible progress ring |
+| **Thumbs down 👎** | `Thumb_Down` held 700–800 ms | Reject proposal / undo last agent action / dismiss | |
 | **I love you 🤟** | `ILoveYou` | User-assignable (default: toggle zoom 150%) | |
 
 Design rules applied:
+- No gesture fires until the hand has been tracked stably for ≥ 300 ms, so the transient poses seen as a hand enters frame cannot trigger an action.
 - Every state-changing gesture needs either a hold time or a velocity threshold, so a hand passing through a pose does not fire.
 - Pointer and click are separate gestures on separate fingers so clicking does not move the cursor (the "Heisenberg effect" of pointing devices).
 - Pause is always reachable with the same gesture and works from any state.
@@ -98,19 +102,19 @@ Priority: **M** must (MVP), **S** should (v1), **C** could (later).
 
 ### 7.1 Capture and recognition
 - FR-1 (M) Acquire webcam video at 640×480–1280×720, 30 fps, from an extension offscreen document; user picks the camera.
-- FR-2 (M) Run hand landmark detection and gesture classification on device with GPU acceleration when available, CPU fallback.
+- FR-2 (M) Run hand landmark detection on device with GPU (WebGL) acceleration when available, CPU (WASM-SIMD) fallback. Gesture classification is an in-browser classifier over normalized landmarks (FR-7), not the MediaPipe canned gesture head, which is kept only as an interim reference.
 - FR-3 (M) Emit a structured gesture event stream: `{ts, handedness, landmarks[21], gesture, confidence, pointer:{x,y}}` at capture rate.
 - FR-4 (M) Pointer smoothing with a speed-adaptive filter (1€ filter) tuned so a still hand produces a still cursor and a fast hand has no visible lag.
 - FR-5 (M) Gesture state machine with debouncing, hold timers, hysteresis, and cooldowns; exactly-once semantics for discrete actions.
 - FR-6 (S) Mirror mode, handedness preference (left/right), and per-user calibration (pinch threshold, pointer gain, active region mapping a comfortable hand box to the full viewport).
-- FR-7 (C) Custom gesture recording and training (10–20 samples per gesture) stored locally; classifier over normalized landmarks.
+- FR-7 (M) The core gesture classifier is an in-browser MLP (kNN placeholder in Phase 0) over wrist-centred, scale-normalized landmarks, with a **mandatory "none" class** trained on natural hand motion to suppress false fires. Per-user custom gesture recording and training (10–20 samples per gesture) stored locally (S) uses the same path, retiring the Model Maker dependency. See 04-feasibility B4.
 - FR-8 (S) Automatic gain adjustment based on apparent hand size (distance from camera).
 
 ### 7.2 Direct browser control
 - FR-10 (M) Visible cursor overlay injected into every page (shadow DOM), with states: idle, pointing, hovering target, pinching, paused.
 - FR-11 (M) Semantic snapping: pointer locks to the nearest interactable element (links, buttons, inputs, `role=button`, tabbable elements, video controls) within a configurable radius; the element gets a highlight ring. Raw-pixel mode available.
 - FR-12 (M) Click, double-click, long-press, drag, scroll with inertia, back, forward, tab next/prev, reload, zoom.
-- FR-13 (M) Clicks are dispatched as trusted input events via the DevTools Protocol (chrome.debugger) so sites that ignore synthetic events still work; fallback to content-script dispatch when the debugger cannot attach (chrome:// pages, other extensions).
+- FR-13 (M) Hybrid click dispatch: content-script synthetic events are the **default** (pending Phase 0 G5 measurement of where they fail); trusted events via the DevTools Protocol (`chrome.debugger`) are used only in an opt-in "trusted click" mode or when the snapping index detects a target that needs user activation (fullscreen, `window.open`, native `<select>`, clipboard, drag-and-drop, sites checking `isTrusted`). `debugger` is an **optional permission**, requested on first need, attached per gesture session and detached on pause. See 04-feasibility A1/B1.
 - FR-14 (M) Works across tab switches, new tabs, and SPA navigations without re-arming.
 - FR-15 (S) Global on-screen HUD showing tracking status, current gesture, and a "camera active" badge; audio cues (optional).
 - FR-16 (S) Keyboard shortcut and toolbar button to pause/resume as a non-gesture escape hatch.
@@ -137,15 +141,15 @@ Priority: **M** must (MVP), **S** should (v1), **C** could (later).
 
 | Area | Requirement |
 |---|---|
-| **Latency** | Camera-to-cursor ≤ 50 ms added over camera latency at 30 fps; gesture→action ≤ 150 ms for discrete gestures (after hold time); agent first proposal ≤ 3 s p50, ≤ 6 s p95 |
-| **Throughput** | ≥ 30 fps inference on Apple M1 / Intel 11th-gen iGPU at 720p; ≥ 20 fps CPU-only fallback at 480p |
+| **Latency** | Camera-to-cursor ≤ 50 ms added over camera latency at 30 fps; gesture→action ≤ 150 ms for discrete gestures (after hold time); first agent suggestion **visible** ≤ 3 s p50, ≤ 6 s p95 (streamed, first suggestion rendered on arrival) |
+| **Throughput** | ≥ 30 fps on Apple Silicon and 11th-gen Xe; ≥ 20 fps on the 2020 Intel Air. GPU cold init may take up to 30 s on some machines; warm up at install. Input resolution barely affects inference (models resize internally); capture at 640×480 by default |
 | **Resource use** | ≤ 25% of one CPU core steady state with GPU delegate; ≤ 400 MB extension memory; no measurable jank on the page's main thread (all inference off the page's process) |
 | **Accuracy** | ≥ 95% precision/recall on the canned gesture set under indoor lighting; pinch detection false positive < 1 per 10 minutes of pointing; swipe false positive < 1 per 30 minutes |
 | **Robustness** | Recovers within 500 ms after the hand leaves and re-enters frame; degrades gracefully in low light (raise thresholds, disable swipes) |
 | **Privacy** | Video frames confined to the offscreen document; no frame ever written to storage or network; landmark data not persisted unless the user records custom gestures; agent receives screenshots only when agent features are enabled and only of the active tab; clear indicator whenever camera is on |
-| **Security** | Debugger permission scoped to the active tab and detached when paused; agent tool surface is an allowlist; secrets never enter the agent context; API keys stored in the local companion, not the extension |
+| **Security** | Debugger permission scoped to the active tab and detached when paused; agent tool surface is an allowlist; secrets never enter the agent context; the LLM API key (BYOK) is confined to the service worker, never a content script, with a plain disclosure that extension storage is not an OS keychain (an OS-keychain companion is a Phase 3 option) |
 | **Accessibility** | Compatible with screen readers (cursor overlay is `aria-hidden`; HUD announcements via live region); high-contrast cursor; all features also reachable via keyboard |
-| **Compatibility** | Chrome 128+ (offscreen USER_MEDIA, side panel, WebGPU); Edge/Brave via Chromium |
+| **Compatibility** | Chrome 128+ (offscreen USER_MEDIA, side panel); Chrome 139+ for on-device speech (`processLocally`, Phase 2); Edge/Brave via Chromium. No WebGPU dependency (delegate is WebGL → WASM) |
 | **Offline** | Direct control fully functional offline; agent features degrade to "unavailable" |
 
 ## 9. Safety model for the agent
@@ -188,13 +192,13 @@ Priority: **M** must (MVP), **S** should (v1), **C** could (later).
 | Camera access in MV3 is finicky | Extension unusable | Offscreen document with `USER_MEDIA`; fallback to a pinned "camera tab"; pre-flight checks in onboarding |
 | Debugger banner ("extension is debugging this browser") annoys users | Uninstalls | Attach only during click dispatch or agent runs; offer content-script-only mode |
 | Prompt injection drives the agent to harmful actions | Security incident | Gesture-gated confirmations, allowlisted tools, domain deny-list, injection classifier |
-| MediaPipe WebGPU delegate immaturity | Performance variance | Benchmark WebGL vs WebGPU vs WASM in Phase 0; ship with auto-selection |
+| MediaPipe delegate performance variance (no WebGPU in tasks-vision) | Performance variance | Benchmark WebGL vs WASM-SIMD in Phase 0; ship with auto-selection by timed first inference; handle `webglcontextlost` |
 | Lighting/skin-tone/hand-size bias in the model | Excludes users | Evaluate across diverse testers in Phase 1; expose thresholds; custom-gesture training as a personal fallback |
 
 ## 13. Open questions
 
 1. Should the agent's model calls go through a local companion (user-supplied API key or Claude subscription via Agent SDK) or a hosted backend with accounts? *Answered 2026-09-04:* BYOK against any OpenAI-compatible endpoint the user configures (own gateway, OpenRouter, local Ollama/vLLM); hosted later if there is a paid tier.
-2. Do we require the debugger permission at install, or request it optionally when the user first hits a site where synthetic clicks fail?
-3. Voice: Web Speech API (cloud, Chrome-dependent) vs on-device Whisper-class model (privacy, +150 MB download).
-4. Is dwell-to-click wanted as an alternative for users who cannot pinch? Likely yes for the accessibility profile.
+2. Do we require the debugger permission at install, or request it optionally when the user first hits a site where synthetic clicks fail? *Answered 2026-09-04:* optional permission, requested on first need; content-script dispatch is the default (see FR-13).
+3. Voice: Web Speech API (cloud, Chrome-dependent) vs on-device Whisper-class model (privacy, +150 MB download). *Answered 2026-09-04:* on-device Web Speech first (Chrome 139+ `processLocally`), cloud fallback with consent, Whisper-in-browser only for custom vocabulary.
+4. Is dwell-to-click wanted as an alternative for users who cannot pinch? *Answered 2026-09-04:* yes, dwell-click is a first-class MVP click mode (default in the Accessibility profile), not a "could".
 5. Head/face gestures (Gameface-style) as an additional input channel for users without hand mobility?

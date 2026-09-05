@@ -4,7 +4,7 @@ paths:
 ---
 # `packages/gesture-core` — perception features + FSM (pure TS)
 
-- **May depend on:** pure TS, `xstate`, `zod`.
+- **May depend on:** pure TS, `xstate`, `zod`, and `@gesture/protocol` (types only).
 - **Must never:** touch DOM, `chrome.*`, `fetch`, or timers outside XState.
 - All gesture timing, hysteresis, cooldowns, and confidence gating live in the XState machine here and nowhere else.
 - Threshold or filter changes are incomplete without a fixture replay (`fixtures/gestures/`).

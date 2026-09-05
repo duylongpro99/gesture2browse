@@ -12,3 +12,10 @@ docs/sdd/*/handoff.md
 .claude/scope.json
 # driver-side memory of the frozen ## Exit checks table (scripts/milestone/exit-check --freeze)
 docs/sdd/*/exit-checks.lock
+
+# Build outputs and tool caches
+node_modules/
+dist/
+.output/
+.turbo/
+test-results/

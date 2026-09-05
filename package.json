@@ -1,0 +1,26 @@
+{
+  "name": "human-gesture",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint && node scripts/lint/boundary-lint.mjs",
+    "lint:boundary": "node scripts/lint/boundary-lint.mjs",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "@gesture/gesture-core": "workspace:*",
+    "@gesture/protocol": "workspace:*",
+    "turbo": "^2.1.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "happy-dom": "^15.0.0",
+    "@playwright/test": "^1.47.0",
+    "eslint": "^9.10.0",
+    "typescript-eslint": "^8.6.0",
+    "prettier": "^3.3.0",
+    "tsup": "^8.3.0"
+  }
+}
