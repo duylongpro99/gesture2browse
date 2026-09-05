@@ -18,6 +18,6 @@ _Project section last updated: 2026-09-04 (owner)_
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
 | 0A scaffold, harness, `gesture-core` v0 | drv-0A | **Finish DONE.** All 8 tasks shipped; E1 real clean-clone (install/build/test) green; `exit-check 0A` full = 6 PASS 0 FAIL, lock OK; branch pushed to `origin/0A`, CI green. Owner opens the PR to `master` themselves (compare master...0A) — no agent PR; agent does not merge. Owner then logs the §8 proposed decisions (in plan `## Status`) and removes this row on merge. | `docs/plans/0A-scaffold.md` | 2026-09-05 |
-| 0C G2 camera grant probe | unclaimed | Not started. Camera grant page + `permissions.query` pre-check + "Allow this time" detection (roadmap §3.2, gate G2). | `docs/plans/0C-camera-grant.md` | 2026-09-05 |
+| 0C G2 camera grant probe | drv-0C | Not started. Camera grant page + `permissions.query` pre-check + "Allow this time" detection (roadmap §3.2, gate G2). | `docs/plans/0C-camera-grant.md` | 2026-09-05 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
