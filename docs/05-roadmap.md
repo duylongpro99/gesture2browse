@@ -397,6 +397,7 @@ Conventions that keep agent sessions short and verifiable. They belong in `CLAUD
 |---|---|---|---|
 | 2026-09-04 | Estimation model: coding agent plus one owner, no team | Owner | This document v0.2 |
 | 2026-09-04 | Planning unit is the milestone; one plan per milestone, gated on plan inputs; Phase 1 split into 1A–1E with a vertical slice first; Phase 2 plans agent core and safety together | Owner review of v0.2 | This document v0.3 |
+| 2026-09-05 | **G2 (0C) camera grant = GO.** Full-tab grant page → persistent camera grant the offscreen doc inherits across a Chrome restart with no prompt; `background.ts` `permissions.query` pre-check gates every offscreen start and routes to the grant page when not granted; "Allow this time" detected (`persistent:false`), not mistaken for persistent. Finding: MV3 service worker can answer `permissions.query({name:'camera'})`. Consumed by 1D.1 onboarding. | G2 (0C): E2 Playwright (pre-granted) + E1 owner restart/"Allow this time" | Recorded in `spike-results.md §G2` |
 | — | Click dispatch default (content-script vs CDP) | G5 (0D) | pending; unblocks 1A, 1C |
 | — | Click mode default for Accessibility profile (pinch vs dwell) | G6 | pending; unblocks 1C |
 | — | Browser inference vs ONNX-Web on Intel Air | G3, G8 | pending; unblocks 1B |
