@@ -3,10 +3,38 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Camera access</title>
+    <title>Camera access — Gesture Browser Agent</title>
   </head>
   <body>
-    <main><p id="status">Camera grant page (0A skeleton)</p></main>
-    <script type="module" src="./main.ts"></script>
+    <main>
+      <h1>Camera access</h1>
+
+      <!-- Pre-check readout: navigator.permissions.query state before we ask. -->
+      <p>Current permission: <strong id="precheck" data-testid="precheck">checking…</strong></p>
+
+      <!-- Result of getUserMedia + the derived grant verdict. -->
+      <p id="status" data-testid="status" role="status" aria-live="polite">
+        Requesting camera to set the permission…
+      </p>
+
+      <!-- Persistent-grant guidance (always shown; this is the whole point of the
+           full-tab page — a persistent grant is the only kind the offscreen doc
+           inherits after a restart). -->
+      <section id="guidance" data-testid="guidance">
+        <p>
+          When Chrome asks, choose <strong>“Allow on every visit”</strong> — not
+          “Allow this time”. Only a persistent grant survives closing Chrome, which
+          is what lets gesture control start without prompting you again.
+        </p>
+      </section>
+
+      <!-- Shown only when a temporary "Allow this time" grant is suspected. -->
+      <p id="allow-this-time-warning" data-testid="allow-this-time-warning" role="alert" hidden>
+        It looks like camera access was granted only for one visit and has since
+        been revoked. Reload this page and choose <strong>“Allow on every visit”</strong>.
+      </p>
+
+      <script type="module" src="./main.ts"></script>
+    </main>
   </body>
 </html>
