@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>window-open</title>
+<button data-dispatch-target>open popup</button>
+<script>
+  // window.open needs transient user activation, which a synthetic event lacks.
+  document.querySelector('[data-dispatch-target]')
+    .addEventListener('click', () => { window.open('about:blank', '_blank', 'width=200,height=200'); });
+</script>

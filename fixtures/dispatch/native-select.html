@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>native-select</title>
+<select data-dispatch-target>
+  <option value="a">a</option>
+  <option value="b">b</option>
+</select>
+<script>
+  // The value only changes when an option is picked from the OS-level popup,
+  // which a raw click (trusted or not) cannot do without keyboard/option events.
+  document.querySelector('[data-dispatch-target]')
+    .addEventListener('change', () => { window.__dispatchOk = true; });
+</script>

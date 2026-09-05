@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>cross-origin-iframe</title>
+<iframe width="200" height="80"></iframe>
+<script>
+  // The child is served from the SECOND local origin; its URL arrives as ?child=.
+  // A content script in this top frame cannot reach into the cross-origin child;
+  // a CDP click at the child's viewport coordinates can, and the child then
+  // postMessages back (the only channel that crosses the origin boundary).
+  const child = new URLSearchParams(location.search).get('child');
+  if (child) document.querySelector('iframe').src = child;
+  window.addEventListener('message', (e) => {
+    if (e.data === 'dispatch-ok') { window.__dispatchOk = true; }
+  });
+</script>
