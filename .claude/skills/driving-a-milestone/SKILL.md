@@ -9,7 +9,9 @@ description: Use when the owner asks to run, drive, or automate a roadmap milest
 
 This session becomes the **driver** for one milestone. It never writes code, plans, or docs. It spawns one worker Claude Code session per phase inside the milestone's worktree, hands it a self-contained brief, waits, reads the worker's `handoff.md`, and either continues, relays an owner question, or stops. The owner talks only to the driver, except to click a Claude Code dialog in a pane.
 
-Driver plus one worker at a time **is** the "one session per milestone" of `CLAUDE.md §0` (`CLAUDE.md §6`). The driver's only repo writes: the STATUS claim (`scripts/milestone/claim`), and `session-*-brief.md` under `docs/sdd/<M>/` (gitignored). The driver may read roadmap §3–6, §8 for the milestone row, and §9 for its re-plan triggers; a worker reads only what its brief names.
+Driver plus one worker at a time **is** the "one session per milestone" of `CLAUDE.md §0` (`CLAUDE.md §6`). The driver's only repo writes: the STATUS claim (`scripts/milestone/claim`), and, through the scripts, `session-*-brief.md` and `driver.json` under `docs/sdd/<M>/` (gitignored). The driver may read roadmap §3–6, §8 for the milestone row, and §9 for its re-plan triggers; a worker reads only what its brief names.
+
+**Driver memory is on disk, not in this chat.** `docs/sdd/<M>/driver.json` (`scripts/milestone/driver-state <M> get`) holds pane, session `N`, role, base SHA, the loop step, the last wait result and outcome, nudges sent, and owner answers pending delivery. `claim`, `spawn`, `brief`, `wait`, `status` write it; the driver never edits it by hand except `driver-state <M> add answers '{"question":…,"answer":…}'`. Consequences: never keep a pane id, `N`, or an answer only in your head; never read `references/briefs.md` (`brief` fills it) or a `status-*.txt` dump unless a VERDICT line points at it; when this conversation grows long, say so and tell the owner it is safe to `/compact` or to open a fresh driver and say "resume <M>" (see **Resume**). A gate costs the same tokens whether it is the first or the tenth.
 
 **Scope.** A worker can only write what its job needs. `spawn` derives a path allowlist from the role (and, for `execute`, from the next ≤2 unfinished tasks of the impl plan; `plan` may also create the contract tests under `*/test/contracts/`, which every later role is denied; `audit` may write only `handoff.md`) into the worktree's `.claude/scope.json`; `scripts/hooks/guard-scope.sh` denies every other Write/Edit and every mutating Bash command, and blocks after a Bash command that left out-of-scope changes. `spawn` records the base SHA; `status` prints the real diff and commits since it and flags `OUT-OF-SCOPE:` paths and `COMMIT-CHECK:` violations. The driver acts on those lines, never on the worker's self-report alone. The allowlist is never widened by hand: a legitimate extra path is a `NEEDS-OWNER` question (`path — reason`) and, if granted, an owner edit to the plan's `**Files:**` block followed by a fresh spawn.
 
@@ -21,6 +23,8 @@ Driver plus one worker at a time **is** the "one session per milestone" of `CLAU
 4. The roadmap row's **plan inputs**: every item that is a §8 decision row must not read `pending`. Items that name a doc count as present. A pending §8 input → name it, stop; the owner logs §8.
 5. `.claude/settings.local.json` exists in the root checkout with the owner's allowlist (git, pnpm, gh, tsc, vitest, playwright). Without it, every worker commit is a permission dialog; say so and let the owner decide before spawning.
 6. `grep -q guard-scope.sh .claude/settings.json` succeeds and `scripts/hooks/guard-scope.sh` is executable. Without the hook the scope is only a request; stop and say so.
+7. `grep -q require-handoff.sh .claude/settings.json` succeeds and `scripts/hooks/require-handoff.sh` is executable (the Stop hook that makes a worker finish its handoff after a cut connection). Without it a disconnect always ends at the owner; say so, the owner decides.
+8. `docs/sdd/<M>/driver.json` already exists in the worktree → this is a **Resume**, not a start: skip to that section.
 
 ## Loop
 
@@ -31,21 +35,50 @@ claim ─► [plan] ─► [execute]* ─► [finish] ─► owner merges
 
 Role order: `plan`, `execute` (repeat while `CONTINUE`), `finish`. Gate probes (0B–0E): `probe`, then `finish`. `audit` is never in the default order: the owner inserts it between two roles (see **Exit checks**). All scripts run from the root checkout or the worktree; both resolve the same paths.
 
-1. **Claim.** `scripts/milestone/claim <M>` → `WORKTREE BRANCH BASE SLUG`. `SLUG` is the plan-file stem from the STATUS row (`0A-scaffold`).
-2. **Spawn.** `scripts/milestone/spawn <M> <role>` → `PANE N BASE SCOPE`. It deletes the previous `handoff.md`, copies the local allowlist into the worktree, refuses a worktree with uncommitted tracked changes (exit 6: show the owner its output, they decide), and writes `.claude/scope.json` (allowlist + base SHA). Every `WARN=` line it prints (a task without a `**Files:**` block, no impl plan yet, no unfinished task) goes to the owner verbatim before you write the brief; they say proceed or re-plan. Then `herdr agent wait <PANE> --until idle --timeout 60000`; `agent_not_found` in the first seconds is normal, retry once. A fresh worktree shows Claude Code's trust dialog (`blocked`; `herdr agent explain <PANE>` prints its text): tell the owner, they accept it in the pane (`herdr agent focus <PANE>`), re-run the wait. Never accept it for them.
-3. **Brief.** Write `<WORKTREE>/docs/sdd/<M>/session-<N>-brief.md`: common header + role block from `references/briefs.md`, every `<…>` filled from step 1, the roadmap row, and the previous handoff's `next`. `{…}` fields are the worker's; leave them.
-4. **Send.** `herdr agent prompt <PANE> "Read docs/sdd/<M>/session-<N>-brief.md and follow it exactly." --wait --timeout 5400000`, in the background. Let the completion notification wake you; never poll with sleep.
-5. **Read.** `scripts/milestone/status <M>`. A handoff counts only if `session: <N>` matches (`status` prints `SESSION-MISMATCH:` when it does not); otherwise treat it as missing. Then the **scope check** section, before the outcome: any `OUT-OF-SCOPE:`, `COMMIT-CHECK:` or `HISTORY:` line overrides the outcome and is handled as `NEEDS-OWNER`: relay the lines verbatim with the handoff's `summary`; the owner chooses revert, accept, or re-plan; their answer goes to the same pane as an answers message (the worker reverts and re-commits, or the owner amends the plan and you spawn afresh). Never revert, amend, or re-scope anything yourself. Then the **exit checks** section (see **Exit checks** below): act on its `lock:` line and comparison words before the outcome table. Then:
+1. **Claim.** `scripts/milestone/claim <M>` → `WORKTREE BRANCH BASE SLUG`. `SLUG` is the plan-file stem from the STATUS row (`0A-scaffold`). Also seeds `driver.json`.
+2. **Spawn.** `scripts/milestone/spawn <M> <role>` → `PANE N BASE SCOPE`. It archives the previous `handoff.md` as `session-<N-1>-handoff.md` (keeping its `next` in `driver.json` for the brief), copies the local allowlist into the worktree, refuses a worktree with uncommitted tracked changes (exit 6: show the owner its output, they decide), writes `.claude/scope.json` (allowlist + base SHA), and records pane/`N`/role in `driver.json`. Every `WARN=` line it prints (a task without a `**Files:**` block, no impl plan yet, no unfinished task) goes to the owner verbatim before the brief; they say proceed or re-plan. Then `herdr agent wait <PANE> --until idle --timeout 60000`; `agent_not_found` in the first seconds is normal, retry once. A fresh worktree shows Claude Code's trust dialog (`blocked`; `herdr agent explain <PANE>` prints its text): tell the owner, they accept it in the pane (`herdr agent focus <PANE>`), re-run the wait. Never accept it for them.
+3. **Brief.** `scripts/milestone/brief <M>` writes `docs/sdd/<M>/session-<N>-brief.md` from `references/briefs.md`: common header + role block, every `<…>` filled from `driver.json` and the roadmap, plus a "Previous answers" section when `driver.json` holds undelivered answers. A `WARN=` line on stderr (no roadmap heading names `<M>`) goes to the owner. Do not read the template or the brief; do not write a brief by hand.
+4. **Send and wait.** `scripts/milestone/wait <M> --brief` in the background (`run_in_background`); it sends the one-line prompt, then waits through sleeps and socket drops (default deadline 90 min; `caffeinate` keeps the Mac from idle-sleeping meanwhile). Let its completion notification wake you; never poll with sleep. Act on its `RESULT=` line:
+
+| `RESULT=` | driver does |
+|---|---|
+| `handoff` | step 5 |
+| `blocked` | a Claude Code dialog in the pane: `herdr agent read <PANE> --lines 40`, show the owner, they answer in the pane (`herdr agent focus <PANE>`), then `scripts/milestone/wait <M>` again |
+| `disconnect` | the worker's turn was cut by a network/API error (the lines are printed). Run `scripts/milestone/wait <M> --nudge` once; it tells the worker to re-read its brief and `progress.md` and continue. A second `disconnect` → `--nudge` again (the script refuses a third: `nudge-limit`); then tell the owner what the pane shows |
+| `idle` | pane idle, no session-`N` handoff, no error text: the old "missing" case. `herdr agent read <PANE> --lines 60`, report what the worker was doing, ask the owner. Never infer an outcome |
+| `stalled` | the prompt never started a turn: `herdr agent read <PANE> --lines 40`, show the owner (usually a dialog or a paste that did not submit) |
+| `gone` | the pane died: step 2 with the same role; `brief` appends any undelivered answers itself |
+| `deadline` | still working after the deadline: `herdr agent read <PANE> --lines 60`, the owner decides wait more (`scripts/milestone/wait <M>`) or stop |
+| `transport` | Herdr unreachable after retries: tell the owner; when Herdr is back, `scripts/milestone/wait <M>` |
+
+5. **Read.** `scripts/milestone/status <M>` prints a **VERDICT** block, the handoff verbatim, and an **attention** section; the full dump goes to `docs/sdd/<M>/status-<N>.txt` and is read only when a VERDICT line is not `ok`/`clean`/`none`. `HANDOFF=` must be `ok` (`mismatch` or `missing` → treat the handoff as missing: the `idle` row above). Then `SCOPE= COMMITS= HISTORY=`, before the outcome: any `OUT-OF-SCOPE:`, `COMMIT-CHECK:` or `HISTORY:` line in **attention** overrides the outcome and is handled as `NEEDS-OWNER`: relay the lines verbatim with the handoff's `summary`; the owner chooses revert, accept, or re-plan; their answer goes to the same pane as an answers message (the worker reverts and re-commits, or the owner amends the plan and you spawn afresh). Never revert, amend, or re-scope anything yourself. Then `EXIT=` / `LOCK=` and the exit-check rows in **attention** (see **Exit checks** below): act on the lock state and comparison words before the outcome table. Then `OUTCOME=`:
 
 | outcome | driver does |
 |---|---|
-| `NEEDS-OWNER` | Put the questions to the owner verbatim (`AskUserQuestion` when they are choices). Send the *answers* message from `references/briefs.md` to the **same pane** with `herdr agent prompt … --wait`. Back to step 5. If the pane is gone, step 2 with a new brief whose "Previous answers" section holds them. A question of the form `path — reason` is a denied write: the owner's options are (a) add the path to the task's `**Files:**` block in `.impl.md` (or the probe plan) in the worktree themselves, then `stop-session.sh` and step 2 (spawn re-derives the scope); (b) tell the worker to do without; (c) re-plan. Never edit `.claude/scope.json`, the plan, or the hook for them. |
-| `CONTINUE` | Read `exit-progress`. Any `at risk` line → treat as `NEEDS-OWNER`: relay the line verbatim with the worker's reason, the owner decides whether to continue, re-plan, or stop. Else `stop-session.sh <PANE>`. Step 2 with the same role. |
-| `DONE` | Check the role's artifacts in the `status` output (plan: `<SLUG>.spec.md`, `.impl.md`, `<SLUG>.md` with `## Exit checks`, `progress.md`, then the **plan gate** under Exit checks; execute: no unfinished task in `progress.md` **and** `exit-progress` has a line per Exit criterion and per fixed interface with none `at risk`; finish: a PR URL in `evidence`). Missing → treat as `BLOCKED`. An `at risk` line → treat as `NEEDS-OWNER` as above; a `not yet` line after execute → the owner chooses between another `execute` session and `finish`. Else `stop-session.sh <PANE>`, next role. After `finish`: report the PR URL and `evidence` to the owner, stop. |
+| `NEEDS-OWNER` | Put the questions to the owner verbatim (`AskUserQuestion` when they are choices). Record each answer: `scripts/milestone/driver-state <M> add answers '{"question":"…","answer":"…"}'`. Send the *answers* message from `references/briefs.md` (the one-line form quoted under **Messages** below) to the **same pane**: `scripts/milestone/wait <M> --answers "<message>"` in the background. Back to step 4's table. If the pane is gone, step 2: `brief` writes the "Previous answers" section from `driver.json`. A question of the form `path — reason` is a denied write: the owner's options are (a) add the path to the task's `**Files:**` block in `.impl.md` (or the probe plan) in the worktree themselves, then `stop-session.sh` and step 2 (spawn re-derives the scope); (b) tell the worker to do without; (c) re-plan. Never edit `.claude/scope.json`, the plan, or the hook for them. |
+| `CONTINUE` | Read `exit-progress` in the handoff. Any `at risk` line → treat as `NEEDS-OWNER`: relay the line verbatim with the worker's reason, the owner decides whether to continue, re-plan, or stop. Else `stop-session.sh <PANE>`. Step 2 with the same role. |
+| `DONE` | Check the role's artifacts against the `ARTIFACTS:` line (plan: `spec=yes impl=yes plan=yes exit-checks-table=yes ledger=yes`, then the **plan gate** under Exit checks; execute: `unfinished-tasks=0` **and** `exit-progress-lines` equal to the table rows with `at-risk=0`; finish: `pr-url=` set, or the owner has said they open the PR themselves). Short → treat as `BLOCKED`. An `at risk` line → treat as `NEEDS-OWNER` as above; a `not yet` line after execute → the owner chooses between another `execute` session and `finish`. Else `stop-session.sh <PANE>`, next role. After `finish`: report the PR URL and `evidence` to the owner, stop. |
 | `BLOCKED` | `stop-session.sh <PANE>`. Report `summary`, `evidence`, `next` verbatim. Stop the loop. |
-| missing | `herdr agent get <PANE>`: `working` → wait again (same timeout). Else `herdr agent read <PANE> --lines 60`, report what the worker was doing, ask the owner. Never infer an outcome. |
+
+**Messages** (driver → same pane, always through `scripts/milestone/wait <M> --answers "…"` or `--prompt "…"`, never a bare `herdr agent prompt`): the answers message and the handoff-format message are quoted in `references/briefs.md`; `--brief` and `--nudge` compose their own. A worker prompt is always one line; everything else belongs in the brief.
 
 6. **Re-plan check.** Before spawning the next role, read the roadmap §9 rows for this phase. A trigger that names `<M>` in its response and has fired (a gate result in `docs/spike-results.md`, an owner message, or an `exit-progress` line) → stop, report the row verbatim, the owner re-plans; never fold a §9 response into a brief yourself.
+
+## Resume (after compaction, a new driver session, or a laptop sleep)
+
+The owner says "resume <M>", or precondition 8 found `driver.json`. Run preconditions 1, 5, 6, 7 only (the branch and the STATUS claim already exist). Then `scripts/milestone/driver-state <M> get` and branch on `step`:
+
+| `step` | meaning | driver does |
+|---|---|---|
+| `claimed` | claim ran, nothing spawned | Loop step 2 with role `plan` (or `probe`) |
+| `spawned` / `briefed` | a pane exists, the brief may not have been sent | `herdr agent get <pane>`: `working` → `scripts/milestone/wait <M>` (no flag); `idle` and no `session-<N>-brief.md` sent (`last_prompt` empty) → `scripts/milestone/wait <M> --brief`; `agent_not_found` → Loop step 2 same role |
+| `waiting` | a prompt was sent, the wait was interrupted | `scripts/milestone/wait <M>` (no flag): it settles or classifies like step 4 |
+| `gate` | the worker settled; `wait_result` / `last_outcome` say how far the reading got | `wait_result=handoff` → Loop step 5; any other `wait_result` → its row in step 4's table |
+| `stopped` | the pane was closed after an outcome | `last_outcome=CONTINUE` → step 2 same role; `DONE` → step 2 next role (plan → check the lock is `FROZEN` first); `BLOCKED` → report and stop |
+
+`driver-state <M> get answers` shows owner answers; `delivered: true` ones reached a worker. Never reconstruct state from this chat when `driver.json` disagrees; `driver.json` wins. If `driver.json` and `.claude/scope.json` disagree on `session`, stop and show the owner both.
+
+After every `stop-session.sh <PANE>` run `scripts/milestone/driver-state <M> set step stopped` (the one hand write besides `add answers`).
 
 ## Exit checks (the driver compares, never grades)
 
@@ -67,7 +100,7 @@ The plan session turns the roadmap row's **Exit** and **Interfaces fixed here** 
 | `REFUSED` / `TIMEOUT` | the check cannot run; report the row verbatim. A check changes only by re-plan; never edit the table. |
 
 **Audit** (owner-invoked only: an answer to a `DISAGREE`, or "audit <M>"): spawn role `audit` between the current role and the next; it edits nothing and always hands off `DONE` with its own `exit-progress`. Compare its lines with the last worker handoff's lines row by row (both quote the Criterion cell): any row where the two grades differ, or where audit says `at risk` → `NEEDS-OWNER` with both lines and the script's result for that row. All equal → tell the owner "audit agrees", `stop-session.sh`, continue with the role the audit was inserted before. Never spawn `audit` on your own initiative.
-Wait result `blocked` mid-turn is a permission dialog: `herdr agent read <PANE> --lines 40`, show the owner, they answer in the pane, then wait again. `stop-session.sh` is `.claude/skills/cris-managed-session/scripts/stop-session.sh`.
+`RESULT=blocked` mid-turn is a permission dialog: `herdr agent read <PANE> --lines 40`, show the owner, they answer in the pane, then `scripts/milestone/wait <M>` again. `stop-session.sh` is `.claude/skills/cris-managed-session/scripts/stop-session.sh`.
 
 ## Owner gates (stop and ask; never proxy the owner)
 
@@ -79,8 +112,11 @@ Pending §8 plan input · brainstorm questions · a roadmap task whose verificat
 
 ## Red flags
 
-- Driver editing anything in the worktree except `session-*-brief.md`.
-- A worker prompt longer than one line (it belongs in the brief).
+- Driver editing anything in the worktree by hand (briefs come from `brief`, state from `driver-state`).
+- A worker prompt longer than one line (it belongs in the brief), or sent with a bare `herdr agent prompt` instead of `scripts/milestone/wait`.
+- Reading `references/briefs.md` or a `status-*.txt` dump when no VERDICT line asked for it; keeping a pane id or `N` only in chat.
+- Nudging a worker whose `RESULT` was `idle` (no error text): that is the owner's call, not a disconnect.
+- Sending a third nudge, or answering a `disconnect` by re-spawning while the pane is alive.
 - Answering a brainstorm question or a pane dialog yourself.
 - Acting on a handoff whose `session:` is not this session's `N`.
 - Moving past an `execute` handoff on `progress.md` alone, without reading `exit-progress`.

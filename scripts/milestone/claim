@@ -39,4 +39,5 @@ if [ ! -d "$wt" ]; then
     git worktree add -b "$m" "$wt" "$base" >/dev/null
   fi
 fi
+"$root/scripts/milestone/driver-state" "$m" set worktree "$wt" branch "$m" base_branch "$base" slug "$slug" driver "$session" step claimed >/dev/null
 echo "WORKTREE=$wt BRANCH=$m BASE=$base SLUG=$slug SESSION=$session"
