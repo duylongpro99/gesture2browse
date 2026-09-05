@@ -98,14 +98,16 @@ _Owned by the 0B session; rewritten, not appended._
 - build: `wxt.config.ts` copies model+WASM via `build:publicAssets`, WAR + `wasm-unsafe-eval` CSP; deps added (mediapipe exact-pinned, playwright).
 - E2 (`frame-pump.e2e.ts`): **passes** — 60 s, WebGL delegate, **p05 30.0 fps** (cap), zero rAF in bundles. Numbers in `docs/spike-results.md §G1`.
 
-**Finding (needs owner):** an offscreen document reports `document.hidden === false` in Chrome (it is not a backgrounded tab), so the roadmap/plan premise "doc hidden ⇒ `hidden` true" does not hold. E2 records `hidden` verbatim and instead proves the gate's substance (no rAF; sustained rate with no foreground surface). Handoff owner-question 1 asks the owner to confirm this interpretation of E2/E1.
+**Finding (resolved — owner accepted reading A, 2026-09-05):** an offscreen document reports `document.hidden === false` in Chrome (it is not a backgrounded tab), so the premise "doc hidden ⇒ `hidden` true" does not hold. The owner accepted that the offscreen document has no visible surface, so E2 stays exactly as written — it records `hidden` verbatim and proves the gate's substance (zero `requestAnimationFrame` in the built offscreen+worker bundles; sustained rate with no foreground surface). No extra test.
 
 **Notable choices:** WXT's esbuild left `new Worker(new URL(...))` untransformed (worker not bundled) → switched to Vite's `?worker` import, which emits the worker chunk with MediaPipe. `browser.runtime.getURL` is path-typed to `PublicPath`; build-injected `/wasm` and `/models` are derived from the `/` origin.
 
-**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** G1 agent-side gate met (≥ 28 fps, 30.0 measured, WebGL, no rAF); the G1 go/no-go (G8) is logged only after the owner's 10-minute M1 run (E1) confirms it.
+**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):**
+- **G1 = GO on the browser frame-pump path.** The offscreen `MediaStreamTrackProcessor` → Worker → MediaPipe pump sustains **30.0 fps p05 over 60 s** (WebGL delegate, `numHands:1`, no `rAF`/timer dependence) — well above the ≥ 28 fps threshold — with no visible surface driving it. This is the agent-side (E2) result; the owner's 10-minute M1 run (E1) is the confirming datapoint. Feeds the G8 browser-inference vs ONNX-Web go/no-go.
+- **`document.hidden` platform note for §8/tech-stack:** offscreen documents report `document.hidden === false`; "hidden" for this container means "never-rendered, no visible surface", which the offscreen doc satisfies structurally. Owner accepted reading A.
 
-**Blockers:** E1 (owner's 10-minute hidden-doc run on the M1) is owner-only — steps in the handoff.
+**Exit checks:** the driver refroze the lock at `14f62d9` (E1 owner + E2 mechanical; `frozen-at 14f62d9`, table hash recorded). Commit `506d725` (V1→E2 rename) accepted as-is. E2 command unchanged and green.
 
-**Exit checks freeze:** the lock `docs/sdd/0B/exit-checks.lock` is out of this session's scope; the driver refreezes it (E2 command unchanged, id renamed V1→E2 per owner).
+**Blockers:** only E1 (owner's 10-minute hidden-doc run on the M1) remains — owner is running it and pastes the numbers into `spike-results.md §G1` themselves. DONE follows their confirmation.
 
 **Superpowers conflicts noted (`CLAUDE.md §6`):** none.
