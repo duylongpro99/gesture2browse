@@ -107,11 +107,11 @@ _Owned by the 0A session; rewritten, not appended._
 - `scripts/milestone/exit-check 0A` (full; clones for the clean-clone row): **`6 PASS 0 FAIL 0 OWNER 0 other | agree 0 disagree 0 at-risk 0 missing 0 unmatched 0 | lock OK`** (frozen at 31a1383). E1/E2/E3/I1/I2/I3 all PASS.
 - Branch pushed to `origin/0A`; **CI green** — run 33941532286 conclusion `success` on headSha fed708b (`https://github.com/duylongpro99/gesture2browse/actions/runs/33941532286`).
 
-**In progress:** none. Verification is complete; the only remaining step is opening the PR to `master`.
+**In progress:** none. Milestone 0A finish phase is **DONE** — all 8 tasks shipped and verified; the branch is pushed to `origin/0A` with green CI.
 
-**Blocked (opening the PR — owner action):** `gh pr create --base master --head 0A` fails with `GraphQL: must be a collaborator (createPullRequest)`. The authenticated gh account is `longduydao99`; the repo is `duylongpro99/gesture2browse`. Opening a PR requires collaborator access this session's account lacks. Not a failing check and not fixable from the finish role (no code paths in scope) — handed off `NEEDS-OWNER`.
+**PR handling (owner decision, 2026-09-05):** the owner opens the PR to `master` themselves from the pushed branch — the agent does **not** run `gh pr create` and no collaborator is added. Open at `https://github.com/duylongpro99/gesture2browse/compare/master...0A`, title `[0A] scaffold, harness, gesture-core v0`. The agent never merges.
 
-**Next:** owner grants collaborator access to `longduydao99` (or switches gh to the `duylongpro99` account), then a finish session runs `gh pr create --base master --head 0A`; or the owner opens the PR directly at `https://github.com/duylongpro99/gesture2browse/pull/new/0A`. Everything else for 0A is green. The owner then logs the roadmap §8 proposed decisions below.
+**Next:** owner opens and reviews the PR (compare master...0A), logs the roadmap §8 proposed decisions below on merge, and removes the 0A STATUS row.
 
 **Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):**
 - 0A fixes three interfaces for 0B/0D/1A: `FixtureRecord` (raw MediaPipe landmarks, `gesture-fixture/v0`), `GestureFrame` v0, bench CSV `BENCH_COLUMNS`. `Intent` v0 is provisional and finalized by 1A.
