@@ -101,14 +101,22 @@ The roadmap 0D row lists no "Interfaces fixed here", so there are no `I` rows.
 
 _Owned by the 0D session; rewritten, not appended._
 
-**Done (session 0, plan):** wrote this plan — the five questions, the local fixture set, the **Files:** block, and the (unfrozen) Exit checks table. Placement is the `apps/playground` harness with fixtures under `fixtures/dispatch/**`; no extension, protocol, or gesture-core code; no new dependency. No owner question is open (all five questions answered from the roadmap row, the rule files, and the 0A/0B golden path), so no brainstorm and no NEEDS-OWNER.
+**Done (session 0, plan):** wrote this plan — the five questions, the local fixture set, the **Files:** block, and the Exit checks table (now frozen in `docs/sdd/0D/exit-checks.lock` at `b9efd68`).
 
-**In progress:** none.
+**Done (session 1, execute):** implemented the survey with `obra-test-driven-development`.
+- Pure summariser `apps/playground/src/dispatch-survey.ts` (`DISPATCH_COLUMNS`, `outcomesToCsv`, `summarizeOutcomes`, `recommendDefault`) + Vitest unit `dispatch-survey.test.ts` (10 cases, written first, green).
+- 15 single-mechanism local fixtures + 2 iframe children under `fixtures/dispatch/**` (+ catalog README, success-sentinel convention).
+- Catalog `apps/playground/src/dispatch-sites.ts` (`DISPATCH_SITES`, `LIVE_SITES`); technique helpers `apps/playground/test/dispatch-techniques.ts` (`syntheticClick`, `cdpClick`, `readSuccess`); survey `apps/playground/test/click-dispatch-survey.e2e.ts` (two loopback origins, both techniques per fixture, `SURVEY_LIVE=1` live branch).
+- **Result (E3, green):** synthetic 10/15, CDP 14/15; **CDP rescues 4** (`istrusted-guard`, `cross-origin-iframe`, `closed-shadow-dom`, `contenteditable`), 1 both-fail (`native-select`). Full table + CSV in `docs/spike-results.md §G5`.
+- `pnpm exec playwright test … click-dispatch-survey.e2e.ts` → PASS; `scripts/milestone/exit-check 0D --fast` → E3 PASS, lock OK; Vitest 10/10; eslint + boundary-lint clean; `tsc` clean.
+- **`playwright.config.ts` unchanged:** its existing `testMatch: '**/*.e2e.ts'` already registers the survey (the exit-check invokes the file by name); no project/testMatch edit was needed, so the plan's "Modify" is a no-op here.
 
-**Next:** the execute session (scope derived from the **Files:** block above) implements the survey with `obra-test-driven-development` — Vitest unit for the pure summariser first, then the Playwright survey over the local fixtures — records the per-site table and recommended default in `docs/spike-results.md §G5`, freezes the Exit-checks lock, and hands off. The owner then runs the live list (`SURVEY_LIVE=1`), spot-checks 5 reported-failure sites (E1), and logs the dispatch default in §8 (E2).
+**In progress:** none. **Awaiting owner:** E1 (live run + spot-check) and E2 (§8 default).
 
-**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** none yet — the dispatch default is proposed by the execute session from the measured table, then confirmed by the owner's spot-check. This planning session fixes no interface and proposes no decision.
+**Next:** owner runs `SURVEY_LIVE=1 pnpm exec playwright test -c apps/playground/playwright.config.ts click-dispatch-survey.e2e.ts`, spot-checks 5 reported-failure sites (E1), then confirms the dispatch default and enters it in roadmap §8 + `03-tech-stack §4` (E2). On confirmation, a follow-up session records the proposed §8 decision here and hands off DONE.
 
-**Blockers:** owner laptop/live-site access for the E1 spot-check (roadmap §3.3 G5); not a blocker for the agent's local-fixture survey.
+**Proposed decisions for roadmap §8 (owner logs; agent does not edit §8):** **click-dispatch default = CDP** (trusted `Input.dispatchMouseEvent`), with *synthetic-first + CDP-escalation* as the owner's alternative. Basis: 4/15 local sites are only reachable via the trusted path (and, live, the activation-gated `window.open`/`target=_blank` cases), so a synthetic default silently fails on hostile pages; `native-select` needs keyboard regardless. Feeds 1A (dispatch default path) and 1C (dispatcher, CDP opt-in shape). Pending the owner's E1 confirmation.
+
+**Blockers:** owner laptop/live-site access for the E1 spot-check (roadmap §3.3 G5); not a blocker for the agent's local-fixture survey, which is complete and green.
 
 **Superpowers conflicts noted (`CLAUDE.md §6`):** none.

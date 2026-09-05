@@ -97,11 +97,42 @@ _E1 (owner, 2026-09-05):_
 
 **Setup:**
 
-**Result (numbers):** _(per-site outcome table: synthetic pass/fail, CDP pass/fail; failure count)_
+_E3 — agent side_ (`apps/playground/test/click-dispatch-survey.e2e.ts`, milestone 0D): a camera-free Playwright survey — the exact sibling of the 0A bench harness. `fixtures/dispatch/**` (15 single-mechanism local site clones, plus two iframe children) is served on **two** loopback origins (`node:http`, ephemeral ports → a real cross-origin case). For every fixture the survey runs **synthetic then CDP** on a fresh page and reads the fixture's success sentinel (`window.__dispatchOk`, a `#dispatched` hash nav, or a popup event). The two techniques (`apps/playground/test/dispatch-techniques.ts`) model the extension's two production input paths from outside (plan §1): **synthetic** = the content script's untrusted `dispatchEvent` fallback (an injected `pointerdown→mousedown→pointerup→mouseup→click`, `isTrusted === false`, run in the top frame so it cannot reach a cross-origin child); **CDP** = the service worker's trusted `chrome.debugger` path, reproduced with a Playwright `CDPSession` calling the same DevTools `Input.dispatchMouseEvent` domain at the target's viewport centre. Same CDP domain ⇒ trusted-input fidelity transfers (the only caveat: this is Playwright's CDP, not `chrome.debugger`, but both drive the identical DevTools input command). The pure summariser (`apps/playground/src/dispatch-survey.ts`: `DISPATCH_COLUMNS`, `outcomesToCsv`, `summarizeOutcomes`, `recommendDefault`) has Vitest unit coverage (`dispatch-survey.test.ts`, 10 cases). Command: `pnpm exec playwright test -c apps/playground/playwright.config.ts click-dispatch-survey.e2e.ts`. Machine: agent CI sandbox (darwin, full Chromium new-headless).
 
-**Gate met? (Y/N):**
+_E1 — owner run_ (`SURVEY_LIVE=1`, network, not CI): the same two techniques over `LIVE_SITES` (`apps/playground/src/dispatch-sites.ts` — React/Vue TodoMVC, OpenStreetMap, an MDN native `<select>`, a Wikipedia anchor). The owner runs it on their laptop and spot-checks 5 sites the survey reports as failures (roadmap §3.3 G5). Command: `SURVEY_LIVE=1 pnpm exec playwright test -c apps/playground/playwright.config.ts click-dispatch-survey.e2e.ts`.
 
-**Dispatch default chosen (→ §8 + `03-tech-stack §4`):**
+**Result (numbers):**
+
+_E3 (agent, 15 local fixtures × 2 techniques = 30 rows, 8.8 s):_ **synthetic 10/15 pass, CDP 14/15 pass. CDP rescues 4 sites where synthetic fails; 1 site resists both.**
+
+| Fixture | Mechanism | synthetic | CDP | Note |
+|---|---|---|---|---|
+| button-onclick | `addEventListener('click')` | pass | pass | baseline |
+| anchor-href | anchor default-action nav | pass | pass | untrusted click still follows `href` |
+| delegated-document | `document`-level delegation | pass | pass | synthetic clicks bubble to `document` |
+| pointerdown-handler | `pointerdown`, not `click` | pass | pass | synthetic sequence includes `pointerdown` |
+| capture-phase | capture-phase listener | pass | pass | capture runs on dispatch |
+| **istrusted-guard** | `isTrusted` guard | **fail** | pass | the canonical synthetic-only failure |
+| native-select | native `<select>` popup | fail | **fail** | a click cannot pick an option (needs keyboard) |
+| window-open | `window.open` user-activation | pass | pass | popup **not** blocked for synthetic in headless (caveat below) |
+| target-blank | `target=_blank` user-activation | pass | pass | new tab opened for synthetic in headless (caveat below) |
+| same-origin-iframe | same-origin iframe target | pass | pass | top frame reaches a same-origin child |
+| **cross-origin-iframe** | cross-origin iframe target | **fail** | pass | synthetic cannot reach the child; CDP clicks by coordinates |
+| canvas-hittest | canvas coordinate hit-test | pass | pass | both carry `clientX/clientY` |
+| **closed-shadow-dom** | closed shadow root target | **fail** | pass | synthetic on the host misses; CDP hit-tests the inner element |
+| label-checkbox | label default-action toggle | pass | pass | untrusted click toggles the control |
+| **contenteditable** | contenteditable focus/caret | **fail** | pass | untrusted click does not focus; a trusted click does |
+
+- **Synthetic-only failures (CDP rescues), 4:** `istrusted-guard`, `cross-origin-iframe`, `closed-shadow-dom`, `contenteditable`.
+- **Both-fail, 1:** `native-select` (a click of any trust cannot drive an OS-level option popup — needs keyboard/option events; out of scope for a click dispatcher).
+- **Caveat — `window.open` / `target=_blank`:** in the full-headless Chromium the survey runs on, a synthetic click's `window.open`/`target=_blank` was **not** popup-blocked (both passed for synthetic). On real Chrome these are gated on transient user activation, which a synthetic `dispatchEvent` lacks, so they are expected synthetic failures live — the owner's `SURVEY_LIVE=1` run confirms this. This is exactly why E1 (live) gates the decision and E3 (local) does not.
+- **CSV** (schema `DISPATCH_COLUMNS = site,category,origin,technique,reached,ok,detail`): emitted to the Playwright stdout; 31 lines (header + 30 rows). Unit tests (10) green: `outcomesToCsv` header/quoting, `summarizeOutcomes` per-site verdict + `n/a` for an unreached technique, `recommendDefault` counts and rule.
+
+_E1 (owner):_ _pending — owner runs `SURVEY_LIVE=1` and spot-checks 5 reported-failure sites._
+
+**Gate met? (Y/N):** **Agent side (E3) Y** — 30/30 well-formed outcome rows; CDP recovers 4 synthetic failures, proving the trusted path is required for hostile pages (the survey's purpose). **E1 (owner spot-check) pending.**
+
+**Dispatch default chosen (→ §8 + `03-tech-stack §4`):** _proposed: **CDP as the dispatch default**, with synthetic-first + CDP-escalation as the owner's alternative._ Rationale: 4/15 local sites (and, live, the activation-gated `window.open`/`target=_blank` cases) are only reachable via the trusted path; a synthetic default silently fails there. `native-select` needs keyboard regardless, so no dispatch default fixes it. **Owner confirms after the E1 live run and enters the number in §8 + `03-tech-stack §4`.**
 
 ---
 
