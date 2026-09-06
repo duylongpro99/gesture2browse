@@ -26,7 +26,7 @@ describe('gesture FSM skeleton', () => {
 
   it('arms after Open_Palm is held for PALM_CLUTCH_MS and emits Arm', () => {
     const { value, intents } = run([palm(0), palm(PALM_CLUTCH_MS)]);
-    expect(value).toBe('Armed');
+    expect(value).toEqual({ Armed: 'Idle' });
     expect(intents).toContainEqual({ type: 'Arm' });
   });
 
@@ -36,8 +36,30 @@ describe('gesture FSM skeleton', () => {
     expect(intents).toHaveLength(0);
   });
 
-  it('emits Scroll from fist motion once Armed', () => {
-    const { intents } = run([palm(0), palm(PALM_CLUTCH_MS), fist(PALM_CLUTCH_MS + 33, SCROLL_STEP * 4)]);
+  it('emits Scroll from fist motion once Armed and enters Armed.Scrolling', () => {
+    const { value, intents } = run([palm(0), palm(PALM_CLUTCH_MS), fist(PALM_CLUTCH_MS + 33, SCROLL_STEP * 4)]);
     expect(intents.some((i) => i.type === 'Scroll')).toBe(true);
+    expect(value).toEqual({ Armed: 'Scrolling' });
+  });
+
+  it('returns Armed.Scrolling to Armed.Idle when the fist releases', () => {
+    const { value } = run([
+      palm(0),
+      palm(PALM_CLUTCH_MS),
+      fist(PALM_CLUTCH_MS + 33, SCROLL_STEP * 4),
+      { ts: PALM_CLUTCH_MS + 66, present: false, score: 0, velocity: { vx: 0, vy: 0 } },
+    ]);
+    expect(value).toEqual({ Armed: 'Idle' });
+  });
+
+  it('still Pauses from Armed (any substate) after another palm clutch hold', () => {
+    const { value, intents } = run([
+      palm(0),
+      palm(PALM_CLUTCH_MS), // arms -> Armed.Idle
+      palm(PALM_CLUTCH_MS + 1), // starts a fresh clutch timer while Armed
+      palm(PALM_CLUTCH_MS + 1 + PALM_CLUTCH_MS), // clutch elapsed again -> Pause
+    ]);
+    expect(value).toBe('Paused');
+    expect(intents).toContainEqual({ type: 'Pause' });
   });
 });

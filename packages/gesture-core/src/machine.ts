@@ -1,6 +1,6 @@
 import { setup, assign, emit } from 'xstate';
 import type { Intent } from '@gesture/protocol';
-import { PALM_CLUTCH_MS, SCROLL_STEP, MIN_CONFIDENCE } from './constants.js';
+import { PALM_CLUTCH_MS, SCROLL_STEP, MIN_CONFIDENCE, SCROLL_PX_PER_UNIT } from './constants.js';
 
 // Per-frame perception result fed to the machine. Feature extraction happens
 // upstream (normalize -> features -> classifier); ALL timing, hysteresis, cooldown
@@ -25,6 +25,11 @@ function palmConfident(f: FrameInput): boolean {
 
 function fistConfident(f: FrameInput): boolean {
   return f.present && f.gesture === 'Closed_Fist' && f.score >= MIN_CONFIDENCE;
+}
+
+// Fist no longer confidently held -> return Scrolling to Idle.
+function fistReleased({ event }: { event: GestureEvent }): boolean {
+  return !fistConfident(event.frame);
 }
 
 // Clutch has been held continuously for PALM_CLUTCH_MS.
@@ -55,6 +60,7 @@ export function createGestureMachine() {
     },
     guards: {
       clutchElapsed,
+      fistReleased,
       shouldScroll: ({ event }: { event: GestureEvent }) =>
         fistConfident(event.frame) && Math.abs(event.frame.velocity.vy) >= SCROLL_STEP,
     },
@@ -63,7 +69,7 @@ export function createGestureMachine() {
       emitPause: emit({ type: 'Pause' } as Intent),
       emitScroll: emit(({ event }: { event: GestureEvent }) => ({
         type: 'Scroll' as const,
-        dy: Math.round(event.frame.velocity.vy / SCROLL_STEP),
+        dy: Math.round(event.frame.velocity.vy * SCROLL_PX_PER_UNIT),
       })),
     },
   }).createMachine({
@@ -81,10 +87,25 @@ export function createGestureMachine() {
       },
       Armed: {
         entry: clearClutch,
+        initial: 'Idle',
+        states: {
+          Idle: {
+            on: {
+              FRAME: [{ guard: 'shouldScroll', target: 'Scrolling', actions: 'emitScroll' }],
+            },
+          },
+          Scrolling: {
+            on: {
+              FRAME: [
+                { guard: 'shouldScroll', actions: 'emitScroll' },
+                { guard: 'fistReleased', target: 'Idle' },
+              ],
+            },
+          },
+        },
         on: {
           FRAME: [
             { guard: 'clutchElapsed', target: 'Paused', actions: 'emitPause' },
-            { guard: 'shouldScroll', actions: ['emitScroll', trackClutch] },
             { actions: trackClutch },
           ],
         },
