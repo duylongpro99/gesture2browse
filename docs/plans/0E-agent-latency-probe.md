@@ -82,7 +82,10 @@ _Owned by the 0E session; rewritten, not appended._
 - Filled `spike-results.md §G7` Setup; handed off `NEEDS-OWNER` for the live run.
 
 **Done (session 1, owner live run 2026-09-06):**
-- Owner ran the CLI against **9router** (`http://localhost:20128/v1`), 10 iterations, 150-item snapshot. Recorded in `spike-results.md §G7`: fast `deepseel-v4-flash` p50 **1574 ms** (p95 2105), planner `glm-5.2` p50 **2653 ms** (p95 3886) — both first-suggestion p50 ≤ 3000 ms ⇒ **gate MET (GO)**. Capability flags: fast `tool-calling N / json_schema Y`; planner `tool-calling Y / json_schema Y`.
+- Owner ran the CLI against **9router** (`http://localhost:20128/v1`), 10 iterations, 150-item snapshot. Recorded in `spike-results.md §G7`: `glm-5.2` p50 **2653 ms** (p95 3886; tool-calling Y, json_schema Y), `deepseel-v4-flash` p50 **1574 ms** (p95 2105; tool-calling N, json_schema Y) — both first-suggestion p50 ≤ 3000 ms ⇒ **gate MET (GO)**.
+
+**Done (session 3, owner post-finish decision 2026-09-06):**
+- Owner decided (no re-measure): **fast role = `glm-5.2`** (not `deepseel-v4-flash`), to enable tool-calling on the fast path; **planner = `glm-5.2`**. Both roles now use `glm-5.2` (first-suggestion p50 2653 / p95 3886 ms; tool-calling Y, json_schema Y). `deepseel-v4-flash` (p50 1574 ms, json_schema-only) is retained in `spike-results.md §G7` as an also-measured lower-latency fast alternative. The earlier tool-calling caveat is resolved by this choice. Gate G7 stays **GO**. Updated `spike-results.md §G7` (result table, gate line, chosen ids, go/no-go row) and this plan's §8 draft. No code touched; probe not re-run.
 
 **Done (session 2, finish):**
 - Re-verified on a clean tree at `bd2d929`: `typecheck` clean, `pnpm --filter @gesture/playground test` → 22 passed, `boundary-lint` → OK, `scripts/milestone/exit-check 0E` → `0 PASS 0 FAIL 3 OWNER 0 other | lock NONE` (all G7 criteria owner-gated; no FAIL/TAMPERED). Fixture replay N/A (no gesture threshold).
@@ -93,7 +96,7 @@ _Owned by the 0E session; rewritten, not appended._
 **Next:** owner merges PR #5, logs the roadmap §8 row (drafted below) and removes the 0E STATUS row (owner-only, or the `driving-a-milestone` driver via `scripts/milestone/log-decision --apply`). Milestone 0E exits.
 
 **Proposed decision(s) for roadmap §8 (owner logs; agent does not edit §8):**
-> **G7 (0E) agent latency probe = GO (2026-09-06).** Provider **9router** (OpenAI-compatible gateway); **fast** model `deepseel-v4-flash` (first-suggestion p50 1574 ms / p95 2105 ms; tool-calling N, json_schema Y), **planner** model `glm-5.2` (p50 2653 ms / p95 3886 ms; tool-calling Y, json_schema Y). First-suggestion p50 ≤ 3 s met for both (gate is on p50). **Caveat → 2A:** the fast model is json_schema-only; if the suggestion loop needs tool-calling on the fast path, use `glm-5.2` for the fast role (still 2653 ms p50, clears the gate). Evidence: `spike-results.md §G7`. Unblocks 2A plan inputs (roadmap §5.1 — provider, model ids, `json_schema` support).
+> **G7 (0E) agent latency probe = GO (2026-09-06).** Provider **9router** (OpenAI-compatible gateway); **fast** model `glm-5.2` and **planner** model `glm-5.2` (first-suggestion p50 2653 ms / p95 3886 ms; tool-calling Y, json_schema Y). Owner chose `glm-5.2` for the fast role (over the also-measured `deepseel-v4-flash`, p50 1574 ms / p95 2105 ms, json_schema-only) to enable tool-calling on the fast path; `deepseel-v4-flash` is retained as a lower-latency fast alternative for paths not needing tool-calling. First-suggestion p50 ≤ 3 s met (gate is on p50). Evidence: `spike-results.md §G7`. Unblocks 2A plan inputs (roadmap §5.1 — provider, model ids, tool-calling + `json_schema` support).
 
 **Blockers:** none. (Live run done; §8 logging + STATUS-row removal are owner-only bookkeeping.)
 
