@@ -46,12 +46,13 @@ Fixture-free (no gesture threshold), so the "fixture replay" clause does not app
 
 Exact paths the implementing (execute) session creates/modifies; the next session's write scope is derived from this block.
 
-- **Create:** `apps/playground/src/latency-probe.ts` — pure harness: SSE parser, per-call first-content latency, `percentiles` (p50/p95), capability detection, 150-item snapshot builder, `runProbe(config, fetchLike)`, `LATENCY_COLUMNS` + CSV emitter. No browser globals; no `apiKey`/`API_KEY` identifier.
-- **Create:** `apps/playground/src/latency-probe-cli.ts` — Node CLI (owner runs live): reads `LLM_PROVIDER_BASE_URL`, `LLM_PROVIDER_KEY`, `LLM_FAST_MODEL`, `LLM_PLANNER_MODEL`; runs N iterations for `fast` and `planner`; prints p50/p95 + capability table + a CSV block for `spike-results.md §G7`.
-- **Test:** `apps/playground/test/latency-probe-stub.ts` — `node:http` OpenAI-compatible stub streaming canned SSE (content + `tool_calls` + `json_schema` final) with a configurable inter-chunk delay.
-- **Test:** `apps/playground/test/latency-probe.test.ts` — Vitest against the stub (§5).
-- **Modify:** `apps/playground/package.json` — add a `probe:latency` script (`node src/latency-probe-cli.ts`); no new dependency.
-- **Modify:** `docs/spike-results.md` — `§G7` Setup filled by the execute session; Result/numbers + capability flags filled after the owner's live run.
+**Files:**
+- Create `apps/playground/src/latency-probe.ts` — pure harness: SSE parser, per-call first-content latency, percentiles (p50/p95), capability detection, 150-item snapshot builder, runProbe(config, fetchLike), latency columns + CSV emitter. No browser globals; no apiKey/API_KEY identifier.
+- Create `apps/playground/src/latency-probe-cli.ts` — Node CLI (owner runs live): reads LLM_PROVIDER_BASE_URL, LLM_PROVIDER_KEY, LLM_FAST_MODEL, LLM_PLANNER_MODEL; runs N iterations for fast and planner; prints p50/p95 + capability table + a CSV block for spike-results.md §G7.
+- Test `apps/playground/test/latency-probe-stub.ts` — node:http OpenAI-compatible stub streaming canned SSE (content + tool_calls + json_schema final) with a configurable inter-chunk delay.
+- Test `apps/playground/test/latency-probe.test.ts` — Vitest against the stub (§5).
+- Modify `apps/playground/package.json` — add a probe:latency script (node src/latency-probe-cli.ts); no new dependency.
+- Modify `docs/spike-results.md` — §G7 Setup filled by the execute session; Result/numbers + capability flags filled after the owner's live run.
 
 ## Exit checks
 
