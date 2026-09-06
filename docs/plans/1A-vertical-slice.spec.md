@@ -1,81 +1,69 @@
 # 1A — Vertical slice — design spec
 
-**Status:** DRAFT — brainstorm complete; four owner questions block finalization (see *Open questions*). Once answered, this becomes the validated design and drives `1A-vertical-slice.impl.md`.
+**Status:** VALIDATED — brainstorm complete; four owner questions answered 2026-09-06 (all as recommended, see §4). Drives `1A-vertical-slice.impl.md` and `1A-vertical-slice.md`.
 **Milestone:** 1A (roadmap §4.1). **Base:** `master`. **Inputs (all logged in §8):** G1 frame-pump path = GO, G5 dispatch default = CDP, G8 provisional = GO (unblocks 1A only).
 
 ## 1. What 1A is
 
-The golden path from `CLAUDE.md §4`: **one gesture end to end** — `fist scroll` — through the real component seam, so that every later milestone imitates the slice. Its product is not the feature but the **frozen shared interfaces**: `GestureFrame`, `Intent`, `PageCommand`, `PageEvent`, the FSM state tree, and the offscreen↔SW↔content-script port topology. 1B/1C/1D/2A *extend* these; none redefines them (roadmap §2.1).
+The golden path from `CLAUDE.md §4`: **one gesture end to end** — `fist scroll` — through the real component seam, so every later milestone imitates the slice. Its product is not the feature but the **frozen shared interfaces**: `GestureFrame`, `Intent`, `PageCommand`, `PageEvent`, the FSM state tree + transition-log shape, and the offscreen↔SW↔content-script port topology. 1B/1C/1D/2A *extend* these additively; none redefines them (roadmap §2.1).
 
 Gesture chosen (roadmap-fixed): **palm clutch → Arm**, **fist → Scroll**. No classifier beyond the existing kNN placeholder; no snapping; no cursor.
 
-## 2. Current state (what 0A/0B/0C already built)
+## 2. Current state (0A/0B/0C)
 
-- `packages/protocol`: `GestureFrame` **frozen v0**; `Intent` **provisional v0** = discriminated union `Arm | Pause | Scroll{dy}`; plus fixture/bench/pump/camera-grant. **No `PageCommand`, no `PageEvent`.**
-- `packages/gesture-core`: `createGestureMachine()` — a *flat* `Paused`/`Armed` machine (palm-clutch→`Arm`, fist+velocity→`Scroll`), `FrameInput` interface, `replayFixture()` collecting emitted Intents. Timing constants in `constants.ts` (single owner).
+- `packages/protocol`: `GestureFrame` **frozen v0**; `Intent` **provisional v0** = discriminated union `Arm | Pause | Scroll{dy}`; plus fixture/bench/pump/camera-grant. **No `PageCommand`, no `PageEvent`, no transition-log, no port-name constants.**
+- `packages/gesture-core`: `createGestureMachine()` — a *flat* `Paused`/`Armed` machine (palm-clutch→`Arm`, fist+velocity→`Scroll`); `FrameInput` interface; `replayFixture()` (raw landmarks → normalize → **unseeded** `KnnClassifier` → FSM). Timing constants in `constants.ts` (single owner). Placeholder kNN returns `none` untrained, so a raw-landmark fixture emits no intents yet; `FixtureRecord` carries **one** `meta.gestureLabel` per record (no per-frame labels).
 - `apps/extension/entrypoints/background.ts`: camera pre-check gate + offscreen creation + pump-stat recording. **No FSM consumption, no dispatcher.**
-- `apps/extension/entrypoints/offscreen/`: G1 frame pump (getUserMedia → `MediaStreamTrackProcessor` → worker → MediaPipe), emits numeric `PumpStat` only via `browser.runtime.sendMessage`. **Does not yet emit `GestureFrame`.** Offscreen uses only `browser.runtime` messaging (no `chrome.tabs`).
+- `apps/extension/entrypoints/offscreen/`: G1 frame pump; emits numeric `PumpStat` only, via `browser.runtime.sendMessage`. **Does not yet emit `GestureFrame`.** Uses only `browser.runtime` messaging (no `chrome.tabs`).
 - `apps/extension/entrypoints/content/index.ts`: empty stub.
 
 ## 3. The five questions
 
 ### Q1 — Placement
 Three components joined by `packages/protocol` messages — this milestone exists to fix that seam:
-- **offscreen** (perception): derive `GestureFrame` from worker landmark output; publish it. Owner rule: `.claude/rules/offscreen.md`.
-- **gesture-core** (pure FSM, consumed by the service worker): `GestureFrame`→FSM→`Intent`. Owner rule: `.claude/rules/gesture-core.md`.
-- **service worker** (`background.ts`, control): consume `GestureFrame`, run the machine, map `Intent`→dispatch, persist session state. Owner rule: `.claude/rules/background.md`.
-- **content script** (page plane): execute the dispatched `PageCommand` (scroll) on the page. Owner rule: `.claude/rules/content.md`.
+- **offscreen** (perception): the inference worker derives `GestureFrame` from landmarks; offscreen main relays it over the SW port. Rule: `.claude/rules/offscreen.md`.
+- **gesture-core** (pure FSM, consumed by the SW): `FrameInput`→FSM→`Intent` + transition log. Rule: `.claude/rules/gesture-core.md`.
+- **service worker** (`background.ts` + `background/`): consume `GestureFrame`, run the machine, map `Intent`→dispatch, persist FSM/log to `chrome.storage.session`. Rule: `.claude/rules/background.md`.
+- **content script**: execute the dispatched `PageCommand` (`scroll`) on the page; announce `ready`. Rule: `.claude/rules/content.md`.
 
-Joining messages, all in `protocol` (Q3): `GestureFrame` (offscreen→SW), `Intent` (internal to gesture-core→SW), `PageCommand` (SW→CS), `PageEvent` (CS→SW).
+Joining messages, all in `protocol`: `GestureFrame` (offscreen→SW), `PageCommand` (SW→CS), `PageEvent` (CS→SW), `TransitionLogEntry` (FSM diagnostics). `Intent` is internal (gesture-core→SW dispatcher).
 
 ### Q2 — Boundary check (per rule file)
-- offscreen: `@mediapipe/tasks-vision`, `gesture-core`, `protocol`, runtime Port — **allowed**. Must publish only `GestureFrame` (no video/landmarks in steady state) — respected.
-- gesture-core: pure TS, `xstate`, `zod`, `protocol` types — **allowed**. All timing/hysteresis/cooldown stays here (`constants.ts`) — respected.
-- background: `gesture-core`, `protocol`, `chrome.*` — **allowed**. Validate every inbound Port msg with the Zod schema before acting — required. (See Q1 dispatch note re: the "CDP is primary input" rule vs. scroll.)
-- content: `page-index`, `protocol`, DOM/Shadow DOM — **allowed**. No `chrome.*`, no gesture timing, validate every `PageCommand` — respected. 1A adds no `page-index` dependency (no snapping).
+- offscreen: `@mediapipe/tasks-vision`, `gesture-core`, `protocol`, runtime Port — allowed. Publishes only `GestureFrame` (no video/landmarks in steady state) — respected.
+- gesture-core: pure TS, `xstate`, `zod`, `protocol` types — allowed. All timing/hysteresis/cooldown stays here (`constants.ts`) — respected.
+- background: `gesture-core`, `protocol`, `chrome.*` — allowed. Validates every inbound Port message with the Zod schema before acting — required. Scroll dispatch is content-script `scrollBy` (not CDP) — see §4 Q1; the "CDP is primary input" rule concerns trusted *input events* (clicks/keys, 1C), not a programmatic `scrollBy`.
+- content: `protocol`, DOM/Shadow DOM — allowed. No `chrome.*`, no gesture timing, validates every `PageCommand` — respected. 1A adds **no** `page-index` dependency (no snapping/index).
 
-### Q3 — Interfaces touched (Zod in `protocol` first)
-- **`GestureFrame`**: unchanged (already frozen v0); confirmed as the offscreen→SW payload. 1B extends with classifier fields.
-- **`Intent`**: promote from *provisional* to *fixed*. Keep discriminated union on `type` with members `Arm | Pause | Scroll`. `Scroll.dy` contract = **signed CSS pixels** (positive = down); the vy→px conversion constant stays a tunable in `gesture-core/constants.ts`. Later milestones **add** members (Click, Drag, Swipe, Hold) — additive only.
-- **`PageCommand`** (new; arch §6 sketch): 1A adds the variant that carries scroll to the page (exact shape depends on **Q1**). Arch §6's sketched variants (`pointer`, `highlight`, `preview`, `snapshot`, `fallbackClick`) are the documented target that 1C/2A add additively.
-- **`PageEvent`** (new; arch §6 sketch): 1A adds `{ type: 'ready'; frameId }` so the SW knows a content script is alive before dispatch. `hover`/`snapshot` added by 1C/2A.
-- **FSM state tree + transition-log shape**: frozen here (**Q3 owner question** for exact scope + log shape).
+### Q3 — Interfaces touched (Zod in `protocol` first, then both sides)
+- **`GestureFrame`**: unchanged (frozen v0); confirmed as the offscreen→SW payload. 1B extends with classifier fields.
+- **`Intent`**: promote provisional→**fixed**, schema unchanged: discriminated union on `type`, members `Arm | Pause | Scroll`. `Scroll.dy` contract = **signed CSS pixels** (positive = content moves up / scroll down); the vy→px conversion constant is a tunable in `gesture-core/constants.ts`. Later milestones **add** members (Click/Drag/Swipe/Hold) — additive only.
+- **`PageCommand`** (NEW): `discriminatedUnion('type', [...])` with the `{ type:'scroll'; dy:number }` variant (the only 1A command). Arch §6's `pointer`/`highlight`/`preview`/`snapshot`/`fallbackClick` are the documented target 1C/2A add.
+- **`PageEvent`** (NEW): `discriminatedUnion('type', [...])` with `{ type:'ready'; frameId:number }`. Arch §6's `hover`/`snapshot` added by 1C/2A.
+- **`TransitionLogEntry`** (NEW, part of the FSM-state-tree interface): `{ ts; from; to; event; intent? }` — event-sourced log the FSM produces for diagnostics (1D.5) and replay tests (arch §3.2).
+- **Port names** (NEW, `protocol` constants): reserved names for the fixed topology (see §4 Q2).
 
 ### Q4 — Principle check (arch §1)
-- **Two loops, two speeds**: 1A is entirely the fast perception–control loop; no agent, no network. Respected.
-- **Video stays in one process**: only `GestureFrame` leaves offscreen. Respected.
-- **Page is hostile**: content script holds no secrets/authority, executes only SW-sent `PageCommand`, validates each with Zod. Respected.
-- **Agent proposes / human disposes**: n/a in 1A (no agent), but the FSM-as-sole-confirmer seam is established.
-- **Replaceable parts**: FSM, dispatcher, and executor sit behind the protocol messages. Respected.
+- **Two loops, two speeds**: 1A is entirely the fast perception–control loop; no agent, no network. ✓
+- **Video stays in one process**: only `GestureFrame` leaves offscreen. ✓
+- **Page is hostile**: content script holds no secrets/authority, executes only SW-sent `PageCommand`, validates each with Zod. ✓
+- **Agent proposes / human disposes**: n/a (no agent in 1A); the FSM-as-sole-source-of-intents seam is established. ✓
+- **Replaceable parts**: FSM, dispatcher, executor sit behind protocol messages. ✓
 
 ### Q5 — Tests
-- **Fixture replay (unit, gesture-core)**: a fixture drives normalize→classifier→FSM and asserts the expected `Intent` sequence (Exit E: "Fixture replay produces the expected Intent sequence"). Extends the existing `replayFixture` path.
-- **Playwright e2e (fake camera)**: scrolls a test page (Exit E). Determinism approach depends on **Q4**.
-- **Boundary lint** on offscreen, background, content (Exit E).
-- **Protocol contract tests** (`packages/protocol/test/contracts/**`): one per `I` row in the Exit-checks table (written this session, failing until execute), asserting what each consumer milestone needs from the frozen shapes.
+- **FSM replay (unit, gesture-core)** — E1: drive a scripted `FrameInput` sequence (palm-hold ≥ `PALM_CLUTCH_MS` → `Arm`; fist + vertical velocity → `Scroll`) through `createGestureMachine()` and assert the `Intent` sequence and the `TransitionLogEntry` sequence. Scripted frames (not raw-landmark fixtures) because 1A keeps the untrained kNN placeholder and a single fixture cannot encode a two-gesture sequence; real-landmark classifier replay lands in 1B with a trained model.
+- **Playwright e2e (fake camera)** — E2: the fake camera runs the real pump; a **test-only** hook (inert in production) publishes a scripted `GestureFrame` sequence at the offscreen→SW boundary; assert the test page scrolled (`Intent`→dispatch→`scrollBy` proven end to end).
+- **Boundary lint** — E3: `node scripts/lint/boundary-lint.mjs` passes on offscreen, background, content.
+- **Protocol/FSM contract tests** (`packages/*/test/contracts/**`): one per `I` row, written this session, frozen; assert what each consumer milestone needs through the owning package's public export.
 
-## 4. Settled design decisions (from the docs; not owner questions)
-1. `Intent` stays a `type`-discriminated union; `Arm`/`Pause`/`Scroll{dy}` are frozen; extension is additive (roadmap "1B/1C/1D/2A extend, none redefines").
-2. `Scroll.dy` = signed CSS pixels; conversion tunable lives only in `gesture-core/constants.ts`.
-3. `GestureFrame` is the offscreen→SW payload, unchanged from v0.
-4. `PageEvent` in 1A = `{ type: 'ready'; frameId }` only.
-5. FSM is hierarchical with PascalCase arch §5 names; 1A implements the subset needed for scroll.
+## 4. Resolved decisions (owner-confirmed 2026-09-06)
 
-## 5. Open questions (blocking finalization — batched to owner)
+- **Q1 — scroll dispatch = content-script `scrollBy`** via `PageCommand{ type:'scroll', dy }` (arch §3.2; no `debugger` permission in the slice). CDP stays the *click* default, reserved for 1C.
+- **Q2 — direct offscreen→content-script Port deferred to 1C.** 1A live-wires **offscreen→SW** (`GestureFrame`) and **SW→CS** (`PageCommand`/`PageEvent`), and *reserves + documents* the direct `OffscreenToContent` port name and the SW-brokered-`MessageChannel` approach (offscreen has no `chrome.tabs`); live `PointerUpdate` wiring lands in 1C, its consumer. No dead code in 1A. If brokering proves infeasible in 1C, that is an ADR then.
+- **Q3 — FSM freeze:** implement `Paused` + `Armed.{Idle,Scrolling}`; freeze the arch §5 PascalCase hierarchical naming as the documented target later milestones add to additively (no empty placeholder states now). **Transition-log shape `{ ts, from, to, event, intent? }` CONFIRMED.**
+- **Q4 — e2e determinism:** test-only hook publishing a scripted `GestureFrame` at the offscreen→SW boundary, inert in production builds; e2e proves `Intent`→dispatch→`scrollBy`.
 
-**Q1. Scroll dispatch path (freezes `PageCommand` shape + dispatch topology).**
-Roadmap §4.1 session 3 says "dispatcher scroll via the G5 default path" (G5 default = CDP). Arch §3.2 says scroll defaults to **content-script `scrollBy` with inertia**, with CDP `mouseWheel` only in trusted mode. The G5 = CDP decision is about *clicks* (1C), not scroll.
-*Recommendation:* content-script `scrollBy` via `PageCommand { type: 'scroll'; dy }` — no `debugger` permission in the slice, matches arch §3.2; CDP stays the *click* default reserved for 1C. (This is the intended reading of "G5 default path" as *the dispatch architecture G5 settled*, not literally CDP-for-scroll.)
+Additional decisions settled from the docs (not owner questions): `Intent` stays a `type`-discriminated union with `Arm/Pause/Scroll{dy}` frozen (additive after); `Scroll.dy` = signed CSS px, conversion tunable only in `gesture-core/constants.ts`; `GestureFrame` unchanged; `PageEvent` in 1A = `ready` only; FSM hierarchical with arch §5 names.
 
-**Q2. The direct offscreen→content-script Port.**
-Plan scope lists "Port topology offscreen → content script and offscreen → service worker". But offscreen documents cannot use `chrome.tabs` (confirmed: the current offscreen doc uses only `browser.runtime` messaging), so a *direct* offscreen→CS port needs the SW to broker a `MessageChannel`. And 1A's scroll slice has **no** pointer/cursor consumer (the cursor is 1C).
-*Recommendation:* 1A live-wires **offscreen→SW** (`GestureFrame`) and **SW→CS** (`PageCommand`), and *fixes + documents* the direct offscreen→CS topology (reserved port name + brokering approach) but **defers live `PointerUpdate` wiring to 1C**, its consumer — avoiding dead code (`CLAUDE.md §5`). If SW-brokered `MessageChannel` proves infeasible in 1C, that becomes an ADR then.
+## 5. Interfaces already at final schema (freeze guards, green at plan time)
 
-**Q3. FSM state-tree freeze scope + transition-log shape.**
-(a) *Scope*: freeze the naming convention (hierarchical, PascalCase arch §5 names) and implement only `Paused` + `Armed.{Idle,Scrolling}`, treating the full arch §5 tree (`Armed.Pointing/PinchDown/Dragging/SwipeArmed/Hold`, `Agent.*`) as the documented target later milestones add additively — **vs** declaring all arch §5 states now as empty placeholders.
-*Recommendation:* former — no dead placeholder states.
-(b) *Transition-log shape* (consumed by 1D.5 diagnostics + replay tests; arch §3.2 "every transition is logged"): propose an event-sourced entry `{ ts: number; from: string; to: string; event: string; intent?: Intent }`, defined in `protocol`. Confirm or adjust.
-
-**Q4. 1A e2e determinism without G4 recordings.**
-No fist-gesture y4m exists (G4 recordings are owner work and *not* a 1A input), and the kNN placeholder cannot reliably classify "fist" from a synthetic y4m.
-*Recommendation:* the fake camera runs the real pump (proving the offscreen path), but the scroll-triggering gesture is injected deterministically via a **test-only** hook that publishes a scripted `GestureFrame` sequence at the offscreen→SW boundary (absent/inert in production builds); the e2e then proves the `Intent`→dispatch→`scrollBy` wiring end to end. Confirm the hook and its placement.
+`GestureFrame` (frozen in 0A) and `Intent` (provisional schema equals its final schema — 1A only lifts the "provisional" marker) need **no** schema change from execute. Their `I`-row contract tests therefore pass at plan time and serve as **freeze guards**: they lock the shape so execute's edits (removing the provisional comment; adding downstream fields later) cannot silently alter it. The genuinely-new interfaces — `PageCommand`, `PageEvent`, `TransitionLogEntry` + hierarchical FSM — have contract tests that **fail today** and are made to pass by execute without being edited.
