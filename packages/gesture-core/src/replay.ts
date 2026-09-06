@@ -1,8 +1,62 @@
 import { createActor } from 'xstate';
-import type { FixtureRecord, Intent } from '@gesture/protocol';
+import type { FixtureRecord, Intent, TransitionLogEntry } from '@gesture/protocol';
 import { normalizeLandmarks } from './normalize.js';
 import { KnnClassifier } from './classifier.js';
 import { createGestureMachine, type FrameInput } from './machine.js';
+
+// Render an XState state value as a dotted path: a string returns itself; an
+// object returns `${key}.${dot(value[key])}` for its single active key (the
+// hierarchical states this machine uses never have parallel regions).
+function dottedPath(value: unknown): string {
+  if (typeof value === 'string') return value;
+  const obj = value as Record<string, unknown>;
+  const key = Object.keys(obj)[0] as string;
+  return `${key}.${dottedPath(obj[key])}`;
+}
+
+export interface GestureRunner {
+  // Sends one frame through the machine and returns the Intents/TransitionLogEntry
+  // list accumulated across all frames sent so far (one owner for timing AND log
+  // shape; the service worker's live log reuses this, per Task 5).
+  send(frame: FrameInput): { intents: Intent[]; transitions: TransitionLogEntry[] };
+}
+
+export function createGestureRunner(): GestureRunner {
+  const actor = createActor(createGestureMachine());
+  let buffered: Intent[] = [];
+  actor.on('Arm', (e) => buffered.push(e));
+  actor.on('Pause', (e) => buffered.push(e));
+  actor.on('Scroll', (e) => buffered.push(e));
+  actor.start();
+
+  const intents: Intent[] = [];
+  const transitions: TransitionLogEntry[] = [];
+
+  return {
+    send(frame: FrameInput) {
+      buffered = [];
+      const from = dottedPath(actor.getSnapshot().value);
+      actor.send({ type: 'FRAME', frame });
+      const to = dottedPath(actor.getSnapshot().value);
+      const emitted = buffered;
+
+      intents.push(...emitted);
+      if (to !== from || emitted.length > 0) {
+        const entry: TransitionLogEntry = { ts: frame.ts, from, to, event: 'FRAME' };
+        if (emitted.length > 0) entry.intent = emitted[0];
+        transitions.push(entry);
+      }
+      return { intents, transitions };
+    },
+  };
+}
+
+export function replayFrames(frames: FrameInput[]): { intents: Intent[]; transitions: TransitionLogEntry[] } {
+  const runner = createGestureRunner();
+  let result: { intents: Intent[]; transitions: TransitionLogEntry[] } = { intents: [], transitions: [] };
+  for (const frame of frames) result = runner.send(frame);
+  return result;
+}
 
 // Drives each fixture frame through normalize -> classifier -> FSM, collecting the
 // Intents the machine emits. The machine owns all timing; replay only extracts
