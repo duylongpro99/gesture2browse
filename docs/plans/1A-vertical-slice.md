@@ -87,9 +87,14 @@ _Owned by the 1A session; rewritten, not appended._
 - Spec (`1A-vertical-slice.spec.md`), implementation plan (`1A-vertical-slice.impl.md`), this plan, the Exit checks table, and the four new contract tests written (`1C-intent` freeze guard + `1C-pagecommand`/`1C-pageevent`/`1C-fsm-state-tree` failing today).
 - SDD workspace generated under `docs/sdd/1A/`.
 
-**In progress:** none — plan session complete, ready to freeze the Exit table (`exit-check --freeze`, owner-gated via the driver) and start execute Task 1.
+**Done (execute session 1, Tasks 1–2):**
+- Task 1 `[protocol]` (commit 17a4b87): lifted Intent's provisional marker (schema frozen `Arm|Pause|Scroll`, `dy`=signed CSS px); added `PageCommandSchema` (`{scroll,dy}`), `PageEventSchema` (`{ready,frameId}`), `TransitionLogEntrySchema` (`{ts,from,to,event,intent?}`), `PortName` constants (`OffscreenToContent` RESERVED). Contract tests I3/I4 + freeze guards I1/I2 green. Task review clean.
+- Task 2 `[gesture-core]` (commits 1afe418..48481dc, 1 fix round): `Armed` compound state `{Idle,Scrolling}`; scroll `dy = Math.round(vy * SCROLL_PX_PER_UNIT)` (new tunable, v0=400); `createGestureRunner()`/`replayFrames()` replay surface returning per-frame `TransitionLogEntry` deltas (fix round 1 corrected `send()` from cumulative→per-frame per brief + Task 5 consumer). Contract I5 + E1 replay green. Task review clean after fix.
+- `exit-check 1A --fast` @ 48481dc: 7 PASS (E1, E3, I1–I5), 1 FAIL (E2 — the scroll e2e does not exist until Task 6). Lock OK.
 
-**Next:** execute Tasks 1→6 in order (protocol → gesture-core → content → offscreen → background → e2e), one component per session; run `exit-check 1A --fast` after each.
+**In progress:** none.
+
+**Next:** execute Tasks 3→6 in order (content → offscreen → background → e2e), one component per session; run `exit-check 1A --fast` after each. E2 (Playwright) goes green at Task 6.
 
 **Blockers:** none.
 
