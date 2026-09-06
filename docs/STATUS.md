@@ -17,6 +17,6 @@ _Project section last updated: 2026-09-05 (driver, on the owner's instruction)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| **1A** | drv-1A | Execute Tasks 1–2 done + reviewed + re-verified (session 2): `protocol` schemas (PageCommand/PageEvent/TransitionLogEntry/PortName) + hierarchical FSM `Armed.{Idle,Scrolling}` with per-frame transition-log replay surface; vitest 67/67, exit-check 7/8 PASS (E1+E3+I1–I5), E2 fails only until the e2e exists. Next: Tasks 3–6 (content → offscreen → background → e2e) | `docs/plans/1A-vertical-slice.md` | 2026-09-06 |
+| **1A** | drv-1A | Execute Tasks 1–4 done + reviewed clean (session 3 added 3 content, 4 offscreen): content executes scroll `PageCommand` via `scrollBy` + announces `ready` on the `ServiceWorkerToContent` port (ddf67e6); offscreen derives `GestureFrame` (landmarks omitted) over `OffscreenToServiceWorker` + `VITE_TEST_HOOKS`-gated inject hook, `@gesture/gesture-core` added to the extension (fe11f4b). exit-check 7/8 PASS (E1+E3+I1–I5), E2 fails only until the e2e (Task 6). Next: Task 5 (background: consume `GestureFrame`, run FSM, dispatch scroll) → Task 6 (Playwright e2e). | `docs/plans/1A-vertical-slice.md` | 2026-09-06 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).

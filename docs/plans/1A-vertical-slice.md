@@ -94,9 +94,15 @@ _Owned by the 1A session; rewritten, not appended._
 
 **Verified (execute session 2, reconcile):** Tasks 1–2 re-verified at 75193c0 — typecheck clean, vitest 67/67, `exit-check 1A --fast` 7 PASS / 1 FAIL (E2 pending Task 6), lock OK. No regression; ledger confirmed.
 
+**Done (execute session 3, Tasks 3–4):**
+- Task 3 `[content]` (commit ddf67e6): content script CONNECTS the `ServiceWorkerToContent` port on injection, posts `PageEvent{ready,frameId:0}`, and validates each inbound `PageCommand` with `PageCommandSchema` before `window.scrollBy({top:dy})` (invalid ignored — page is hostile). Pure logic in new `content/scroll.ts` so the happy-dom unit test avoids the `defineContentScript` wxt global. 5/5 tests; review Spec ✅ / quality Approved.
+- Task 4 `[offscreen]` (commit fe11f4b): new `offscreen/gesture-frame.ts` `createGestureFrameSource()` composes normalize→1€ filter→features→`KnnClassifier` into a schema-valid `GestureFrame` with `landmarks` omitted (video containment); the worker flattens hand[0]→`number[63]` locally and posts only `{type:'frame',frame}`; `main.ts` opens the `OffscreenToServiceWorker` port, relays frames, and adds the fully-`VITE_TEST_HOOKS`-gated `__inject_frames` hook (absent from production). `@gesture/gesture-core` added to the extension deps. 3/3 new + 20/20 extension suite; review Spec ✅ / quality Approved.
+- `exit-check 1A --fast` @ fe11f4b: 7 PASS (E1, E3, I1–I5), 1 FAIL (E2 — the scroll e2e exists only at Task 6). E3 boundary lint now passes with content + offscreen wired. Lock OK.
+- 5 deferred minors (none blocking) carried to the final whole-branch review at Task 6 — see `docs/sdd/1A/progress.md`.
+
 **In progress:** none.
 
-**Next:** execute Tasks 3→6 in order (content → offscreen → background → e2e), one component per session; run `exit-check 1A --fast` after each. E2 (Playwright) goes green at Task 6.
+**Next:** execute Task 5 (`background`: consume `GestureFrame`, run the FSM via `createGestureRunner`, map `Scroll`→`PageCommand`, persist the transition log to `storage.session`) then Task 6 (Playwright fake-camera e2e), one component per session; run `exit-check 1A --fast` after each. E2 (Playwright) goes green at Task 6.
 
 **Blockers:** none.
 
