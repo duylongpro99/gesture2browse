@@ -14,6 +14,7 @@
 # Usage: scripts/milestone/status <MILESTONE-ID> [--full]     STATUS_NO_CHECKS=1 skips exit-check
 #   --full  print the whole dump instead of the verdict (what this script printed before)
 set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 [ $# -ge 1 ] || { echo "usage: status <MILESTONE-ID> [--full]" >&2; exit 2; }
 m=$1; shift; full=0
 for a in "$@"; do case "$a" in --full) full=1 ;; *) echo "unknown flag $a" >&2; exit 2 ;; esac; done
@@ -23,7 +24,7 @@ wt="$root/.worktrees/$m"
 [ -d "$wt" ] || { echo "no worktree at $wt" >&2; exit 3; }
 cd "$wt"
 sec() { printf '\n===== %s\n' "$1"; }
-slug=$(grep -E "^\| \*{0,2}${m}[ *|]" docs/STATUS.md | sed -n 's|.*docs/plans/\([A-Za-z0-9._-]*\)\.md.*|\1|p'); [ -n "$slug" ] || slug=$m
+slug=$(ms_status_slug "$m" docs/STATUS.md)
 ledger=""; for l in "docs/sdd/$slug/progress.md" "docs/sdd/$m/progress.md"; do [ -f "$l" ] && { ledger=$l; break; }; done
 handoff="docs/sdd/$m/handoff.md"
 

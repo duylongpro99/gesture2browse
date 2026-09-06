@@ -27,6 +27,7 @@
 # Warnings (a task without a Files block, no impl plan yet, no unfinished task)
 # go into .warnings and are printed by spawn as WARN= lines for the driver.
 set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 [ $# -ge 2 ] || { echo "usage: scope <MILESTONE-ID> <ROLE> [--session N] [--write]" >&2; exit 2; }
 m=$1; role=$2; shift 2
 session=""; write=0
@@ -44,9 +45,8 @@ wt="$root/.worktrees/$m"
 [ -d "$wt" ] || { echo "no worktree at $wt; run scripts/milestone/claim $m first" >&2; exit 3; }
 cd "$wt"
 
-row=$(grep -E "^\| \*{0,2}${m}[ *|]" docs/STATUS.md || true)
-slug=$(printf '%s' "$row" | sed -n 's|.*docs/plans/\([A-Za-z0-9._-]*\)\.md.*|\1|p')
-[ -n "$slug" ] || slug=$m
+ms_load_config "$root"
+slug=$(ms_status_slug "$m" docs/STATUS.md)
 base=$(git rev-parse HEAD)
 
 warnings=()
@@ -71,14 +71,16 @@ tasks_json='[]'
 # Widen one plan path to the unit the boundary rules own (CLAUDE.md §2: the
 # component is the boundary; its rule file's `paths:` is the same granularity).
 component_glob() {
-  local p=$1
+  local p=$1 r
+  for r in $MS_COMPONENT_ROOTS; do
+    case "$p" in "$r"/*/*) printf '%s/%s/**\n' "$r" "$(printf '%s' "$p" | cut -d/ -f2)"; return ;; esac
+  done
+  for r in $MS_WHOLE_DIRS; do
+    case "$p" in "$r"/*) printf '%s/**\n' "$r"; return ;; esac
+  done
   case "$p" in
-    packages/*/*) printf 'packages/%s/**\n' "$(printf '%s' "$p" | cut -d/ -f2)" ;;
-    apps/*/*)     printf 'apps/%s/**\n'     "$(printf '%s' "$p" | cut -d/ -f2)" ;;
-    fixtures/*)   printf 'fixtures/**\n' ;;
-    .github/*)    printf '.github/**\n' ;;
-    */)           printf '%s**\n' "$p" ;;   # a directory listed explicitly
-    *)            printf '%s\n' "$p" ;;     # docs, rule files, root files: exact
+    */) printf '%s**\n' "$p" ;;   # a directory listed explicitly
+    *)  printf '%s\n' "$p" ;;     # docs, rule files, root files: exact
   esac
 }
 
@@ -119,7 +121,7 @@ add_from_files() { # $1 = newline-separated paths (runs in this shell: no pipe)
 }
 
 # Contract tests (## Exit checks, I rows) are written by plan and frozen for everyone else.
-contracts=("packages/*/test/contracts/**" "apps/*/test/contracts/**")
+read -r -a contracts <<< "$MS_CONTRACT_GLOBS"
 case "$role" in
   plan)
     allow+=("docs/**" "${contracts[@]}") ;;

@@ -20,6 +20,7 @@
 # The driver then runs scripts/milestone/brief <M> (writes the brief) and, in the
 # background, scripts/milestone/wait <M> --brief (sends the one-line prompt, waits).
 set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 [ $# -eq 2 ] || { echo "usage: spawn <MILESTONE-ID> <ROLE>" >&2; exit 2; }
 m=$1; role=$2
 case "$role" in plan|execute|finish|probe|audit) ;; *) echo "unknown role: $role (plan|execute|finish|probe|audit)" >&2; exit 2 ;; esac
@@ -46,7 +47,8 @@ fi
 rm -f "$wt/.claude/stop-blocks"
 [ -f "$root/.claude/settings.local.json" ] && cp "$root/.claude/settings.local.json" "$wt/.claude/settings.local.json"
 n=$(find "$sdd" -maxdepth 1 -name 'session-*-brief.md' | wc -l | tr -d ' ')
-name="hg-$m-$role-$n"
+ms_load_config "$root"
+name="$MS_PANE_PREFIX-$m-$role-$n"
 scope=$("$root/scripts/milestone/scope" "$m" "$role" --session "$n" --write)
 out=$(cd "$wt" && "$create" --s-name "$name" --p-name "$name")
 pane=$(printf '%s' "$out" | sed -n 's/.*in pane \([^ ]*\).*/\1/p')

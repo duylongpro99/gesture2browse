@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Install (or refresh) the milestone kit into a project: copies the scripts and
+# hooks, links the skills, seeds the docs and templates that do not exist yet,
+# appends the .gitignore block, and stamps .milestone-kit with the kit location
+# so scripts/bootstrap/check can report drift.
+#
+# Idempotent. Never overwrites: scripts/milestone/config, .claude/settings.json
+# (a MANUAL: line is printed when it lacks the hooks), .claude/settings.local.json,
+# or any doc that already exists. Scripts and hooks ARE refreshed (they are the
+# kit's, not the project's; `check` shows DRIFT when they differ).
+#
+# Usage: scripts/bootstrap/install <project-root> [--no-skills] [--no-templates]
+# Prints one line per action: COPIED: / KEPT: / LINKED: / SEEDED: / MANUAL:
+set -euo pipefail
+[ $# -ge 1 ] || { echo "usage: install <project-root> [--no-skills] [--no-templates]" >&2; exit 2; }
+proj=$1; shift; skills=1; templates=1
+for a in "$@"; do case "$a" in --no-skills) skills=0 ;; --no-templates) templates=0 ;; *) echo "unknown flag $a" >&2; exit 2 ;; esac; done
+[ -d "$proj" ] || { echo "no such directory: $proj" >&2; exit 3; }
+proj=$(cd "$proj" && pwd)
+kit=$(cd "$(dirname "$0")/../.." && pwd)                 # skills/milestone-kit
+gck=$(cd "$kit/../.." && pwd)                              # general-cc-kit
+git -C "$proj" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "MANUAL: $proj is not a git repository; run git init first" ; exit 4; }
+
+copy_tree() { # $1 = kit subdir, $2 = project subdir, $3... = basenames never overwritten
+  local src="$kit/$1" dst="$proj/$2" f rel keep
+  mkdir -p "$dst"
+  while IFS= read -r -d '' f; do
+    rel=${f#"$src/"}
+    keep=0; for k in "${@:3}"; do [ "$rel" = "$k" ] && keep=1; done
+    if [ $keep = 1 ] && [ -e "$dst/$rel" ]; then echo "KEPT: $2/$rel"; continue; fi
+    mkdir -p "$(dirname "$dst/$rel")"
+    if [ -e "$dst/$rel" ] && cmp -s "$f" "$dst/$rel"; then continue; fi
+    cp "$f" "$dst/$rel"; chmod +x "$dst/$rel" 2>/dev/null || true; echo "COPIED: $2/$rel"
+  done < <(find "$src" -type f -print0)
+}
+copy_tree scripts/milestone scripts/milestone config
+copy_tree scripts/hooks scripts/hooks
+copy_tree scripts/sdd scripts/sdd
+copy_tree scripts/bootstrap scripts/bootstrap
+[ -f "$proj/scripts/milestone/config" ] || { cp "$kit/templates/milestone.config" "$proj/scripts/milestone/config"; echo "SEEDED: scripts/milestone/config (fill the {{…}} placeholders)"; }
+
+# .claude/settings.json: seed, or tell the owner what to merge.
+mkdir -p "$proj/.claude/rules" "$proj/.claude/skills"
+if [ ! -f "$proj/.claude/settings.json" ]; then
+  cp "$kit/templates/claude/settings.json" "$proj/.claude/settings.json"; echo "SEEDED: .claude/settings.json (hooks)"
+else
+  for h in guard-scope.sh require-handoff.sh guard-superpowers-paths.sh; do
+    grep -q "$h" "$proj/.claude/settings.json" || echo "MANUAL: .claude/settings.json lacks the $h hook; merge templates/claude/settings.json by hand"
+  done
+fi
+[ -f "$proj/.claude/settings.local.json" ] || { cp "$kit/templates/claude/settings.local.json.example" "$proj/.claude/settings.local.json.example"; echo "SEEDED: .claude/settings.local.json.example (owner copies to settings.local.json and edits the allowlist)"; }
+
+# .gitignore block
+if ! grep -q '^# ---- milestone-kit' "$proj/.gitignore" 2>/dev/null; then
+  { [ -f "$proj/.gitignore" ] && [ -n "$(tail -c1 "$proj/.gitignore")" ] && echo; cat "$kit/templates/gitignore.block"; } >> "$proj/.gitignore"
+  echo "COPIED: .gitignore (milestone-kit block appended)"
+fi
+
+# skills
+if [ $skills = 1 ]; then
+  link() { # $1 = name, $2 = target
+    local t="$proj/.claude/skills/$1"
+    [ -e "$2/SKILL.md" ] || { echo "MANUAL: skill source missing: $2"; return; }
+    if [ -L "$t" ] && [ "$(readlink "$t")" = "$2" ]; then return; fi
+    [ -e "$t" ] && [ ! -L "$t" ] && { echo "MANUAL: .claude/skills/$1 is a real directory; move it aside to link the kit's"; return; }
+    ln -sfn "$2" "$t"; echo "LINKED: .claude/skills/$1 -> $2"
+  }
+  link driving-a-milestone "$kit/skills/driving-a-milestone"
+  link bootstrapping-milestones "$kit/skills/bootstrapping-milestones"
+  link cris-managed-session "$gck/skills/head-chief/skills/managed-session"
+  if [ -x "$gck/link-superpowers-skills.sh" ]; then
+    "$gck/link-superpowers-skills.sh" "$proj" --prefix obra | sed 's/^linked /LINKED: obra /' | grep -v '^$' || true
+  else
+    echo "MANUAL: $gck/link-superpowers-skills.sh not found; link the superpowers skills as .claude/skills/obra-<name>"
+  fi
+fi
+
+# docs and templates (never overwrite)
+if [ $templates = 1 ]; then
+  seed() { # $1 = template rel path, $2 = project rel path
+    [ -e "$proj/$2" ] && return 0
+    mkdir -p "$(dirname "$proj/$2")"; cp "$kit/templates/$1" "$proj/$2"; echo "SEEDED: $2"
+  }
+  seed CLAUDE.md CLAUDE.md
+  seed docs/STATUS.md docs/STATUS.md
+  seed docs/05-roadmap.md docs/05-roadmap.md
+  seed docs/plans/README.md docs/plans/README.md
+  seed docs/sdd/README.md docs/sdd/README.md
+  seed docs/adr/README.md docs/adr/README.md
+  seed docs/adr/0000-template.md docs/adr/0000-template.md
+  mkdir -p "$proj/docs/journal" "$proj/docs/tickets"; [ -e "$proj/docs/journal/.gitkeep" ] || { : > "$proj/docs/journal/.gitkeep"; echo "SEEDED: docs/journal/.gitkeep"; }
+  [ -e "$proj/docs/tickets/.gitkeep" ] || { : > "$proj/docs/tickets/.gitkeep"; echo "SEEDED: docs/tickets/.gitkeep"; }
+  [ -d "$proj/.claude/rules" ] && [ -z "$(ls -A "$proj/.claude/rules")" ] && { cp "$kit/templates/rules/component.md" "$proj/.claude/rules/_component.template.md"; echo "SEEDED: .claude/rules/_component.template.md (copy per component, then delete)"; }
+fi
+
+printf 'kit=%s\nsha=%s\ninstalled=%s\n' "$kit" "$(git -C "$gck" rev-parse --short HEAD 2>/dev/null || echo unknown)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$proj/.milestone-kit"
+echo "STAMP: .milestone-kit -> $kit"
+echo "next: scripts/bootstrap/check (from $proj)"

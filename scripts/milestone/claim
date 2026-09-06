@@ -7,6 +7,7 @@
 # Usage: scripts/milestone/claim <MILESTONE-ID>      e.g. 0A, 1B, 2A
 # Prints: WORKTREE=<path> BRANCH=<M> BASE=<branch> SLUG=<plan slug> SESSION=drv-<M>
 set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 [ $# -eq 1 ] || { echo "usage: claim <MILESTONE-ID>" >&2; exit 2; }
 m=$1; session="drv-$m"
 root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
@@ -14,11 +15,10 @@ cd "$root"
 base=$(git rev-parse --abbrev-ref HEAD)
 wt="$root/.worktrees/$m"
 
-row=$(grep -E "^\| \*{0,2}${m}[ *|]" docs/STATUS.md || true)
+row=$(ms_status_row "$m" docs/STATUS.md)
 [ -n "$row" ] || { echo "no STATUS row for $m; the owner adds the row first (CLAUDE.md §0)" >&2; exit 3; }
-owner=$(printf '%s' "$row" | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}')
-slug=$(printf '%s' "$row" | sed -n 's|.*docs/plans/\([A-Za-z0-9._-]*\)\.md.*|\1|p')
-[ -n "$slug" ] || slug=$m
+owner=$(ms_status_owner "$m" docs/STATUS.md)
+slug=$(ms_status_slug "$m" docs/STATUS.md)
 case "$owner" in
   unclaimed|"")
     git diff --cached --quiet || { echo "index has staged changes; commit or unstage first" >&2; exit 4; }

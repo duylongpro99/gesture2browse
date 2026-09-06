@@ -22,6 +22,7 @@
 # Exit codes: 0 report printed (whatever it says); 2 usage; 3 no worktree;
 #   6 lock exists (--freeze); 7 a row names no existing file (--freeze).
 set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 [ $# -ge 1 ] || { echo "usage: exit-check <MILESTONE-ID> [--fast] [--no-run] [--freeze] [--refreeze]" >&2; exit 2; }
 m=$1; shift
 fast=0; norun=0; freeze=0; refreeze=0
@@ -149,7 +150,7 @@ fi
 echo "worker: $worker_src"
 
 # ---- run -----------------------------------------------------------------------
-allow_first='^(pnpm|npx|node|turbo|tsc|vitest|playwright|bash|sh|test|\[|scripts/)'
+ms_load_config "$root"; allow_first=$MS_CHECK_ALLOW
 deny_any='(git push|rm -rf|curl |wget |ssh |sudo |chmod |> */dev/)'
 run_to() {  # $1 dir, $2 cmd, $3 outfile → exit status (124 = timeout); own process group so children die too
   ( cd "$1" && perl -e '

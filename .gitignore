@@ -32,3 +32,28 @@ test-results/
 .turbo/cache
 
 .env
+# ---- milestone-kit (driving-a-milestone) ----
+# SDD scratch (regenerable). The ledger docs/sdd/*/progress.md is tracked.
+docs/sdd/*/task-*-brief.md
+docs/sdd/*/task-*-report.md
+docs/sdd/*/review-*.diff
+# Local Claude Code settings
+.claude/settings.local.json
+# driving-a-milestone scratch (regenerable); the worker's session-end writes are tracked
+docs/sdd/*/session-*-brief.md
+docs/sdd/*/handoff.md
+docs/sdd/*/session-*-handoff.md
+docs/sdd/*/status-*.txt
+# the driver's on-disk memory (scripts/milestone/driver-state)
+docs/sdd/*/driver.json
+# per-session write scope written by scripts/milestone/spawn; enables scripts/hooks/guard-scope.sh
+.claude/scope.json
+# scripts/hooks/require-handoff.sh block counter, reset by spawn
+.claude/stop-blocks
+# frozen ## Exit checks table (scripts/milestone/exit-check --freeze)
+docs/sdd/*/exit-checks.lock
+# milestone worktrees (scripts/milestone/claim); the branch is tracked, its checkout is not
+.worktrees/
+# kit stamp written by scripts/bootstrap/install (absolute path; machine-local)
+.milestone-kit
+# ---- end milestone-kit ----

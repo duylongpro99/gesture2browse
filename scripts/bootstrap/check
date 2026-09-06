@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+# Readiness check for driving-a-milestone: is this repo prepared, stage by stage?
+# Uses the same parsers the milestone scripts use (scripts/milestone/lib.sh), so
+# "check says OK" and "claim/next/brief can read it" are one fact.
+#
+# Usage: scripts/bootstrap/check [<project-root>] [--milestone M] [--list] [--no-tests]
+#   --milestone M  the milestone the owner will run first (default: first row of the roadmap)
+#   --list         print the manifest (every check: stage, id, who fills it) and exit
+#   --no-tests     skip scripts/milestone/tests/*.sh
+#
+# Lines (the bootstrapping agent acts on these only):
+#   OK: <id> — …            MISSING: <id> — <path>          MALFORMED: <id> — <why>
+#   PLACEHOLDER: <path> — n `{{…}}` left                    OWNER: <id> — <what only the owner can supply>
+#   DRIFT: <path> differs from the kit copy                 NOTE: <id> — advisory, never blocks
+#   NEXT: <verbatim line of scripts/milestone/next --inputs M>
+#   summary: … | READY / NOT READY
+# Exit 0 = READY (no MISSING / MALFORMED / PLACEHOLDER; OWNER, DRIFT, NOTE do not block), 1 = NOT READY.
+set -uo pipefail
+proj=""; m=""; list=0; tests=1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --milestone) m=${2:-}; shift 2 ;;
+    --list) list=1; shift ;;
+    --no-tests) tests=0; shift ;;
+    -*) echo "unknown flag $1" >&2; exit 2 ;;
+    *) proj=$1; shift ;;
+  esac
+done
+here=$(cd "$(dirname "$0")" && pwd)
+[ -n "$proj" ] || proj=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+proj=$(cd "$proj" && pwd)
+lib="$proj/scripts/milestone/lib.sh"; [ -f "$lib" ] || lib="$here/../milestone/lib.sh"
+# shellcheck disable=SC1090
+. "$lib"
+
+if [ $list = 1 ]; then
+cat <<'LIST'
+stage  id                  artifact                                           filled by
+0      prd                 docs/01-prd.md (## headings, a Goals section)      owner idea → agent draft → owner approves
+0      arch                docs/02-architecture.md §1 principles, §3 components (### 3.x), §6 interfaces, §10 layout   agent from PRD → owner approves
+1      claude-md           CLAUDE.md with §0–§6 (template)                    template → agent fills {{…}} from arch
+1      rules               .claude/rules/<component>.md per §3 component, `paths:` frontmatter   agent from arch §3/§10 → owner reads
+2      roadmap             docs/05-roadmap.md: milestone rows, §8 table, §9 table (template)   agent from PRD+arch → owner approves milestones + exit criteria
+2      roadmap-ids         every milestone id matches [0-9][A-Z](.n)? and has a ### heading naming it   parser
+2      roadmap-cells       Plan inputs / Exit cells present per milestone     agent
+3      status              docs/STATUS.md with the first milestone row `unclaimed` and a Plan cell   template → agent
+3      plans-readme        docs/plans/README.md (five questions, ## Status, ## Exit checks, Superpowers)   template → agent fills {{…}}
+3      sdd-readme          docs/sdd/README.md                                 template
+3      adr                 docs/adr/README.md + 0000-template.md              template → agent fills {{…}}
+3      journal             docs/journal/                                      install
+3      spike-results       docs/spike-results.md, only when the roadmap has gates (G<n>)   template → agent
+4      scripts             scripts/milestone/*, scripts/hooks/*, scripts/sdd/*, executable   install
+4      config              scripts/milestone/config sources cleanly, no {{…}}   agent
+4      settings            .claude/settings.json wires the three hooks        install / owner merges
+4      gitignore           .gitignore has the milestone-kit block             install
+4      skills              .claude/skills: driving-a-milestone, cris-managed-session, obra-* the briefs name   install
+4      tools               git, jq, gh on PATH; herdr (OWNER when absent)     owner
+4      local-settings      .claude/settings.local.json allowlist              owner
+4      tests               scripts/milestone/tests/*.sh pass                  kit
+5      placeholders        no `{{…}}` left in CLAUDE.md, docs/, .claude/rules, scripts/milestone/config   agent
+5      next                scripts/milestone/next --inputs <M> prints READY   parser (BLOCKED (OWNER) items are the owner's)
+5      git                 clean tree on the base branch                      owner
+LIST
+exit 0
+fi
+
+cd "$proj"
+ok=0; missing=0; malformed=0; placeholder=0; owner=0; drift=0
+OK()   { ok=$((ok+1)); echo "OK: $1"; }
+MISS() { missing=$((missing+1)); echo "MISSING: $1"; }
+MAL()  { malformed=$((malformed+1)); echo "MALFORMED: $1"; }
+OWN()  { owner=$((owner+1)); echo "OWNER: $1"; }
+NOTE() { echo "NOTE: $1"; }
+stage() { printf '\n== Stage %s\n' "$1"; }
+need_file() { [ -f "$1" ] && return 0; MISS "$2 — $1"; return 1; }
+has_heading() { grep -Eq "^## $1\." "$2"; }
+
+# ---------------------------------------------------------------- stage 0: intent
+stage "0 — intent (PRD, architecture)"
+if need_file docs/01-prd.md prd; then
+  if grep -Eiq '^##+ .*(goal|objective)' docs/01-prd.md; then OK "prd — docs/01-prd.md has a Goals section"; else MAL "prd — docs/01-prd.md has no '## … Goals' heading"; fi
+fi
+if need_file docs/02-architecture.md arch; then
+  bad=""
+  for n in 1 3 6 10; do has_heading "$n" docs/02-architecture.md || bad="$bad §$n"; done
+  comps=$(grep -Ec '^### 3\.[0-9]+' docs/02-architecture.md)
+  [ "$comps" -ge 1 ] || bad="$bad '### 3.x component'"
+  if [ -z "$bad" ]; then OK "arch — §1 §3 ($comps components) §6 §10 present"; else MAL "arch — docs/02-architecture.md lacks:$bad (CLAUDE.md §0 and the plan template cite them)"; fi
+  for n in 7 8; do has_heading "$n" docs/02-architecture.md || NOTE "arch — no §$n (CLAUDE.md §0 points security/performance there; add or edit the pointer)"; done
+fi
+
+# ---------------------------------------------------------------- stage 1: boundaries
+stage "1 — boundaries (CLAUDE.md, rules)"
+if need_file CLAUDE.md claude-md; then
+  bad=""; for n in 0 1 2 3 4 5 6; do grep -Eq "^## $n\." CLAUDE.md || bad="$bad §$n"; done
+  if [ -z "$bad" ]; then OK "claude-md — CLAUDE.md §0–§6 present"; else MAL "claude-md — CLAUDE.md lacks:$bad (the briefs cite §0 §1 §5 §6 by number)"; fi
+fi
+rules=$(find .claude/rules -maxdepth 1 -name '*.md' ! -name '_*' 2>/dev/null | wc -l | tr -d ' ')
+if [ "$rules" = 0 ]; then MISS "rules — .claude/rules/<component>.md (one per arch §3 component)"
+else
+  bad=""
+  for f in .claude/rules/*.md; do case "$(basename "$f")" in _*) continue ;; esac
+    head -1 "$f" | grep -q '^---$' && grep -q '^paths:' "$f" || bad="$bad $f"
+  done
+  if [ -z "$bad" ]; then OK "rules — $rules rule files with paths: frontmatter"; else MAL "rules — no 'paths:' frontmatter in:$bad"; fi
+  [ -n "${comps:-}" ] && [ "$rules" -lt "$comps" ] && NOTE "rules — $rules rule files for $comps arch §3 components; a component without a rule file has no boundary"
+fi
+[ -e .claude/rules/_component.template.md ] && NOTE "rules — delete .claude/rules/_component.template.md once every component has its file"
+
+# ---------------------------------------------------------------- stage 2: roadmap
+stage "2 — roadmap"
+first=""
+if need_file docs/05-roadmap.md roadmap; then
+  rows=$(ms_roadmap_milestones docs/05-roadmap.md)
+  n=$(printf '%s\n' "$rows" | awk 'NF' | wc -l | tr -d ' ')
+  if [ "$n" = 0 ]; then MAL "roadmap — no milestone row (need '### x.y Milestone <ID> —' + '| **Plan inputs** |' row, or a table with a 'Plan inputs' column and '| **<ID>** |' rows)"
+  else
+    OK "roadmap — $n milestone rows: $(printf '%s\n' "$rows" | cut -f1 | tr '\n' ' ')"
+    first=$(printf '%s\n' "$rows" | head -1 | cut -f1)
+    badid=""; nosec=""; noinp=""
+    while IFS=$'\t' read -r id inputs gate; do
+      [ -n "$id" ] || continue
+      printf '%s' "$id" | grep -Eq '^[0-9]([A-Z](\.[0-9]+)?|\.[0-9]+)$' || badid="$badid $id"
+      [ -n "$(ms_roadmap_section "$id" docs/05-roadmap.md)" ] || nosec="$nosec $id"
+      [ -n "$inputs" ] || noinp="$noinp $id"
+    done <<< "$rows"
+    [ -z "$badid" ] && OK "roadmap-ids — every id matches 0A / 1D.1 / 3.4" || MAL "roadmap-ids — ids not of the form 0A / 1D.1 / 3.4 (branch and worktree names):$badid"
+    if [ -z "$nosec" ]; then OK "roadmap-ids — every milestone has a '### x.y Milestone(s) …' heading naming it"
+    else
+      chosen=${m:-$first}
+      case " $nosec " in *" $chosen "*) MAL "roadmap-ids — no '### x.y Milestone(s) …' heading names $chosen (brief cannot fill <section>)" ;; *) NOTE "roadmap-ids — no heading names (brief will WARN and leave <section> when they run):$nosec" ;; esac
+    fi
+    [ -z "$noinp" ] && OK "roadmap-cells — every milestone has a Plan inputs cell" || MAL "roadmap-cells — empty Plan inputs cell:$noinp"
+    # Exit cell: heading form → a `| **Exit** |` row before the next ###; table form → an Exit column
+    noexit=$(awk -F'|' '
+      function strip(s) { gsub(/\*/, "", s); gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+      /^###[ \t]+[0-9]+(\.[0-9]+)*[ \t]+Milestone[ \t]/ { if (hid != "" && !ex) print hid; hid = $0; sub(/^###[ \t]+[0-9]+(\.[0-9]+)*[ \t]+Milestone[ \t]+/, "", hid); sub(/[ \t].*$/, "", hid); ex = 0; intable = 0; next }
+      /^###/ { if (hid != "" && !ex) print hid; hid = ""; intable = 0; next }
+      hid != "" && /^\|/ { if ($2 ~ /^[ \t]*\*\*Exit\*\*[ \t]*$/) ex = 1; next }
+      /^\|/ && !intable { pi = 0; ec = 0; for (i = 2; i < NF; i++) { c = strip($i); if (c == "Plan inputs") pi = 1; if (c == "Exit") ec = 1 } if (pi) { intable = 1; tex = ec } next }
+      intable && /^\|[ \t]*\*\*/ { if (!tex) { id = strip($2); sub(/[ \t].*$/, "", id); print id } next }
+      intable && !/^\|/ { intable = 0 }
+      END { if (hid != "" && !ex) print hid }' docs/05-roadmap.md | tr '\n' ' ')
+    if [ -z "$noexit" ]; then OK "roadmap-cells — every milestone has an Exit cell"
+    else
+      chosen=${m:-$first}
+      case " $noexit" in *" $chosen "*) MAL "roadmap-cells — $chosen has no Exit cell (exit-check has nothing to freeze)" ;; *) NOTE "roadmap-cells — no Exit cell yet (fine for milestones planned later):$noexit" ;; esac
+    fi
+    gates=$(printf '%s\n' "$rows" | cut -f3 | awk 'NF' | wc -l | tr -d ' ')
+  fi
+  if grep -Eq '^## 8\.' docs/05-roadmap.md && awk '/^## 8\./{p=1} p && /^\| *Date *\| *Decision *\| *Input *\| *Result *\|/{f=1} END{exit !f}' docs/05-roadmap.md; then
+    OK "roadmap — §8 decision log table (| Date | Decision | Input | Result |)"
+  else MAL "roadmap — no '## 8.' heading with a '| Date | Decision | Input | Result |' table (next/log-decision read it)"; fi
+  grep -Eq '^## 9\.' docs/05-roadmap.md && OK "roadmap — §9 re-plan triggers present" || MAL "roadmap — no '## 9.' re-plan triggers section (the driver reads it before every spawn)"
+fi
+if [ -z "$m" ]; then
+  m=$first
+  if [ -f docs/STATUS.md ] && [ -n "${rows:-}" ]; then
+    while IFS=$'\t' read -r id _; do [ -n "$id" ] && [ -n "$(ms_status_row "$id" docs/STATUS.md)" ] && { m=$id; break; }; done <<< "$rows"
+  fi
+  [ -n "$m" ] && echo "milestone: $m (first roadmap row with a STATUS row, else the first row; override with --milestone)"
+fi
+
+# ---------------------------------------------------------------- stage 3: process docs
+stage "3 — process docs"
+if need_file docs/STATUS.md status; then
+  grep -q '^## Active workstreams' docs/STATUS.md || MAL "status — docs/STATUS.md has no '## Active workstreams' section"
+  if [ -n "$m" ]; then
+    row=$(ms_status_row "$m" docs/STATUS.md)
+    if [ -z "$row" ]; then MISS "status — docs/STATUS.md row for $m: | **$m** | unclaimed | <one sentence> | \`docs/plans/<slug>.md\` | <date> |"
+    else
+      o=$(ms_status_owner "$m" docs/STATUS.md)
+      case "$o" in unclaimed) OK "status — row $m unclaimed, slug $(ms_status_slug "$m" docs/STATUS.md)" ;; drv-$m) OK "status — row $m already claimed by drv-$m (a resume)" ;; *) MAL "status — row $m owner cell is '$o' (claim needs 'unclaimed' or 'drv-$m')" ;; esac
+      printf '%s' "$row" | grep -q 'docs/plans/[A-Za-z0-9._-]*\.md' || MAL "status — row $m Plan cell names no docs/plans/<slug>.md (slug falls back to '$m')"
+    fi
+  fi
+fi
+if need_file docs/plans/README.md plans-readme; then
+  bad=""; for s in 'The five questions' '## Status' '## Exit checks' 'Superpowers'; do grep -Fq "$s" docs/plans/README.md || bad="$bad '$s'"; done
+  [ -z "$bad" ] && OK "plans-readme — five questions, ## Status, ## Exit checks, Superpowers" || MAL "plans-readme — docs/plans/README.md lacks:$bad"
+fi
+need_file docs/sdd/README.md sdd-readme && OK "sdd-readme"
+need_file docs/adr/README.md adr && need_file docs/adr/0000-template.md adr && OK "adr — README + template"
+[ -d docs/journal ] && OK "journal — docs/journal/" || MISS "journal — docs/journal/ (session-end writes go there)"
+if [ "${gates:-0}" -gt 0 ]; then
+  need_file docs/spike-results.md spike-results && OK "spike-results — roadmap has $gates gate rows"
+else NOTE "spike-results — roadmap has no Gate column; docs/spike-results.md not required"; fi
+
+# ---------------------------------------------------------------- stage 4: tooling
+stage "4 — tooling"
+kit=$(sed -n 's/^kit=//p' .milestone-kit 2>/dev/null); [ -n "$kit" ] || kit=$(cd "$here/../.." && pwd)
+bad=""
+for f in claim spawn brief wait status exit-check scope log-decision next driver-state lib.sh; do [ -x "scripts/milestone/$f" ] || bad="$bad scripts/milestone/$f"; done
+for f in guard-scope.sh require-handoff.sh guard-superpowers-paths.sh; do [ -x "scripts/hooks/$f" ] || bad="$bad scripts/hooks/$f"; done
+for f in sdd-workspace task-brief review-package; do [ -x "scripts/sdd/$f" ] || bad="$bad scripts/sdd/$f"; done
+[ -z "$bad" ] && OK "scripts — milestone, hooks, sdd scripts present and executable" || MISS "scripts — not present/executable:$bad (scripts/bootstrap/install)"
+if [ -d "$kit/scripts" ]; then
+  for f in $(cd "$kit/scripts" && find milestone hooks sdd bootstrap -type f ! -name config 2>/dev/null); do
+    [ -f "scripts/$f" ] && ! cmp -s "$kit/scripts/$f" "scripts/$f" && { drift=$((drift+1)); echo "DRIFT: scripts/$f differs from the kit copy ($kit/scripts/$f)"; }
+  done
+fi
+if [ -f scripts/milestone/config ]; then
+  if (set -e; . scripts/milestone/config) 2>/dev/null; then OK "config — scripts/milestone/config sources cleanly"; else MAL "config — scripts/milestone/config does not source (KEY=value lines only)"; fi
+else MISS "config — scripts/milestone/config (templates/milestone.config)"; fi
+if need_file .claude/settings.json settings; then
+  bad=""; for h in guard-scope.sh require-handoff.sh guard-superpowers-paths.sh; do grep -q "$h" .claude/settings.json || bad="$bad $h"; done
+  [ -z "$bad" ] && OK "settings — .claude/settings.json wires the three hooks" || MAL "settings — .claude/settings.json lacks hook(s):$bad (driver preconditions 6, 7)"
+fi
+if [ -f .gitignore ] && grep -q '^# ---- milestone-kit' .gitignore && grep -q '^\.worktrees/' .gitignore && grep -q 'docs/sdd/\*/handoff.md' .gitignore; then OK "gitignore — milestone-kit block present"
+else MISS "gitignore — the milestone-kit block (templates/gitignore.block; install appends it)"; fi
+bad=""
+for s in driving-a-milestone cris-managed-session obra-brainstorming obra-writing-plans obra-subagent-driven-development obra-executing-plans obra-test-driven-development obra-verification-before-completion obra-finishing-a-development-branch obra-using-git-worktrees; do
+  [ -f ".claude/skills/$s/SKILL.md" ] || bad="$bad $s"
+done
+[ -x .claude/skills/cris-managed-session/scripts/create-session.sh ] || bad="$bad cris-managed-session/scripts/create-session.sh"
+[ -z "$bad" ] && OK "skills — driving-a-milestone, cris-managed-session, obra-* linked" || MISS "skills — .claude/skills lacks:$bad"
+[ -d .claude/skills/driving-a-milestone ] && [ ! -L .claude/skills/driving-a-milestone ] && NOTE "skills — driving-a-milestone is a real directory, not a link into the kit; edits there do not reach other projects"
+bad=""; for t in git jq gh; do command -v "$t" >/dev/null 2>&1 || bad="$bad $t"; done
+[ -z "$bad" ] && OK "tools — git jq gh on PATH" || MISS "tools — not on PATH:$bad"
+command -v herdr >/dev/null 2>&1 && OK "tools — herdr on PATH (HERDR_ENV=${HERDR_ENV:-unset} here; the driver needs 1)" || OWN "tools — herdr not on PATH; the driver runs inside Herdr (precondition 1)"
+[ -f .claude/settings.local.json ] && OK "local-settings — .claude/settings.local.json present" || OWN "local-settings — .claude/settings.local.json missing: copy .claude/settings.local.json.example and edit the allowlist, or every worker commit is a permission dialog (precondition 5)"
+if [ $tests = 1 ] && [ -d scripts/milestone/tests ]; then
+  for t in scripts/milestone/tests/*.sh; do
+    out=$(bash "$t" 2>&1); rc=$?
+    if [ $rc = 0 ] && ! printf '%s' "$out" | grep -q '^not ok'; then OK "tests — $t"; else MAL "tests — $t failed:"; printf '%s\n' "$out" | grep -E '^not ok|fail' | head -5 | sed 's/^/   | /'; fi
+  done
+fi
+
+# ---------------------------------------------------------------- stage 5: ready
+stage "5 — ready"
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  c=$(grep -oE '\{\{[A-Z0-9_]+\}\}' "$f" | wc -l | tr -d ' ')
+  [ "$c" = 0 ] || { placeholder=$((placeholder+1)); echo "PLACEHOLDER: $f — $c {{…}} left: $(grep -oE '\{\{[A-Z0-9_]+\}\}' "$f" | sort -u | tr '\n' ' ')"; }
+done < <( { [ -f CLAUDE.md ] && echo CLAUDE.md; [ -f scripts/milestone/config ] && echo scripts/milestone/config; find docs .claude/rules -type f -name '*.md' 2>/dev/null | grep -v '/_component.template.md$'; } )
+[ $placeholder = 0 ] && OK "placeholders — none left"
+if [ -n "$m" ] && [ -x scripts/milestone/next ] && [ -f docs/05-roadmap.md ] && [ -f docs/STATUS.md ]; then
+  line=$(scripts/milestone/next --inputs "$m" 2>&1 | tail -1)
+  echo "NEXT: $line"
+  case "$line" in READY:*) OK "next — $m is READY for claim" ;; BLOCKED:*) OWN "next — $m BLOCKED; each '(OWNER)' item is the owner's to confirm, each 'pending' gate runs its milestone first" ;; *) MAL "next — scripts/milestone/next --inputs $m: $line" ;; esac
+fi
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  d=$(git status --porcelain --untracked-files=no | wc -l | tr -d ' ')
+  [ "$d" = 0 ] && OK "git — clean tree on $(git rev-parse --abbrev-ref HEAD)" || OWN "git — $d uncommitted tracked changes on $(git rev-parse --abbrev-ref HEAD); the driver needs a clean base (precondition 2)"
+else MISS "git — not a git repository"; fi
+
+echo
+printf 'summary: %d ok, %d missing, %d malformed, %d placeholder, %d owner, %d drift | ' "$ok" "$missing" "$malformed" "$placeholder" "$owner" "$drift"
+if [ $missing = 0 ] && [ $malformed = 0 ] && [ $placeholder = 0 ]; then echo "READY (owner items above are the owner's; first milestone: ${m:-?})"; exit 0
+else echo "NOT READY (work the first non-OK line of the lowest stage)"; exit 1; fi

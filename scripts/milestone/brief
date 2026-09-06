@@ -15,6 +15,7 @@
 #   <WORKTREE>/docs/sdd/<M>/session-<N>-brief.md (gitignored) and prints its path,
 #   or the brief itself with --stdout (nothing written, answers untouched).
 set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 [ $# -ge 1 ] || { echo "usage: brief <MILESTONE-ID> [--stdout]" >&2; exit 2; }
 m=$1; shift; stdout=0
 for a in "$@"; do case "$a" in --stdout) stdout=1 ;; *) echo "unknown flag $a" >&2; exit 2 ;; esac; done
@@ -29,21 +30,13 @@ ds="$here/driver-state"
 n=$("$ds" "$m" get session); role=$("$ds" "$m" get role)
 [ -n "$n" ] && [ -n "$role" ] || { echo "driver.json has no session/role; run scripts/milestone/spawn $m <role> first" >&2; exit 5; }
 slug=$("$ds" "$m" get slug); [ -n "$slug" ] || slug=$m
-base_branch=$("$ds" "$m" get base_branch); [ -n "$base_branch" ] || base_branch=master
+ms_load_config "$root"
+base_branch=$("$ds" "$m" get base_branch); [ -n "$base_branch" ] || base_branch=$MS_DEFAULT_BASE
 prev_next=$("$ds" "$m" get prev_next); [ -n "$prev_next" ] || prev_next="none: first session"
 
 # Roadmap section: the ### heading naming the milestone exactly, else the one
 # whose range (e.g. 0B–0E) contains it; the driver sees a WARN when neither.
-section=$(awk -v m="$m" '
-  /^###[ \t]+[0-9]+(\.[0-9]+)*[ \t]+Milestones?[ \t]/ {
-    sec = $2; rest = $0
-    if (rest ~ ("[ \t]" m "([^A-Za-z0-9.]|$)")) { print sec; exit }
-    if (match(rest, /[0-9]+[A-Z][–-][0-9]+[A-Z]/)) {
-      r = substr(rest, RSTART, RLENGTH); gsub(/–/, "-", r)
-      split(r, ab, "-"); a = ab[1]; b = ab[2]
-      if (substr(a, 1, length(a) - 1) == substr(m, 1, length(m) - 1) && substr(a, length(a)) <= substr(m, length(m)) && substr(m, length(m)) <= substr(b, length(b))) { print sec; exit }
-    }
-  }' "$wt/docs/05-roadmap.md")
+section=$(ms_roadmap_section "$m" "$wt/docs/05-roadmap.md")
 [ -n "$section" ] || { echo "WARN=no roadmap heading names $m; <section> left in the brief for the driver to fill" >&2; section="<section>"; }
 
 # Fenced block under a heading in the reference.

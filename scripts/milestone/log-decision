@@ -22,6 +22,7 @@
 # Exit: 0 printed/applied; 2 usage; 3 no files; 4 dirty; 5 not merged; 6 no §8 row in the plan;
 #       7 the row is already in §8.
 set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 [ $# -ge 1 ] || { echo "usage: log-decision <MILESTONE-ID> [--apply] [--no-commit]" >&2; exit 2; }
 m=$1; shift; apply=0; commit=1
 for a in "$@"; do case "$a" in --apply) apply=1 ;; --no-commit) commit=0 ;; *) echo "unknown flag $a" >&2; exit 2 ;; esac; done
@@ -46,7 +47,7 @@ if [ -n "$(git status --porcelain --untracked-files=no -- "$roadmap" "$status_md
 fi
 
 # ---- 2. the drafted row ----
-slug=$(grep -E "^\| \*{0,2}${m}[ *|]" "$status_md" | sed -n 's|.*docs/plans/\([A-Za-z0-9._-]*\)\.md.*|\1|p' || true); [ -n "$slug" ] || slug=$m
+slug=$(ms_status_slug "$m" "$status_md")
 plan=""
 for d in "$root/.worktrees/$m" "$root"; do
   [ -d "$d" ] || continue

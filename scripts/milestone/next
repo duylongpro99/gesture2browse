@@ -23,6 +23,7 @@
 # branch); the plan from .worktrees/<M> when it exists (the §8 draft lives there
 # until the PR merges), else from the root.
 set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 mode=report; m=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -38,45 +39,20 @@ roadmap="$root/docs/05-roadmap.md"; status_md="$root/docs/STATUS.md"
 base=$(git -C "$root" rev-parse --abbrev-ref HEAD)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/next.XXXXXX"); trap 'rm -rf "$tmp"' EXIT
 
-# ---- roadmap: every milestone with its Plan inputs cell (TSV: id, inputs, gate) ----
-# Two forms: a `### x.y Milestone <ID> —` heading followed by a `| **Plan inputs** | … |`
-# row, and a table whose header has a `Plan inputs` column, rows `| **<ID> …** | … |`.
-awk -F'|' '
-  function cell(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-  function strip(s) { gsub(/\*/, "", s); return cell(s) }
-  /^###[ \t]+[0-9]+(\.[0-9]+)*[ \t]+Milestone[ \t]/ {
-    hid = $0; sub(/^###[ \t]+[0-9]+(\.[0-9]+)*[ \t]+Milestone[ \t]+/, "", hid); sub(/[ \t].*$/, "", hid)
-    intable = 0; next
-  }
-  /^###/ { hid = ""; intable = 0; next }
-  hid != "" && $2 ~ /^[ \t]*\*\*Plan inputs\*\*[ \t]*$/ { printf "%s\t%s\t\n", hid, cell($3); hid = ""; next }
-  /^\|/ && !intable {
-    pi = 0; gc = 0
-    for (i = 2; i < NF; i++) { c = strip($i); if (c == "Plan inputs") pi = i; if (c == "Gate") gc = i }
-    if (pi) { intable = 1; hid = "" }
-    next
-  }
-  intable && /^\|[ \t]*-/ { next }
-  intable && /^\|[ \t]*\*\*/ {
-    id = strip($2); sub(/[ \t].*$/, "", id)
-    printf "%s\t%s\t%s\n", id, cell($pi), (gc ? strip($gc) : "")
-    next
-  }
-  intable && !/^\|/ { intable = 0 }
-' "$roadmap" > "$tmp/milestones"
+# ---- roadmap: every milestone with its Plan inputs cell (TSV: id, inputs, gate; lib.sh) ----
+ms_roadmap_milestones "$roadmap" > "$tmp/milestones"
 [ -s "$tmp/milestones" ] || { echo "WARN=no milestone rows with Plan inputs found in $roadmap" >&2; }
 
-# ---- roadmap §8: Input cell and Result cell of every row ----
-awk -F'|' '/^## 8\./{p=1; next} /^## /{p=0} p && /^\|/ && NF >= 5 && $2 !~ /^[ \t]*-+[ \t]*$/ && $2 !~ /Date/ {
-  gsub(/^[ \t]+|[ \t]+$/, "", $4); gsub(/^[ \t]+|[ \t]+$/, "", $5); printf "%s\t%s\n", $4, $5 }' "$roadmap" > "$tmp/s8"
+# ---- roadmap §8: Input cell and Result cell of every row (lib.sh) ----
+ms_roadmap_s8 "$roadmap" > "$tmp/s8"
 
 g_logged() { # G<n> → 0 when a non-pending §8 row names it in its Input cell
   awk -F'\t' -v g="$1" '$1 ~ ("(^|[^A-Za-z0-9])" g "([^0-9]|$)") && tolower($2) !~ /^pending/ { f=1 } END { exit !f }' "$tmp/s8"
 }
 g_producer() { awk -F'\t' -v g="$1" '$3 == g { print $1; exit }' "$tmp/milestones"; }
 
-status_row() { grep -E "^\| \*{0,2}${1}[ *|]" "$status_md" || true; }
-status_owner() { status_row "$1" | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}'; }
+status_row() { ms_status_row "$1" "$status_md"; }
+status_owner() { ms_status_owner "$1" "$status_md"; }
 
 # merged: a first-parent merge/squash commit on base names the milestone, or the
 # milestone branch is fully contained in base while its STATUS row is gone, or a
@@ -183,7 +159,7 @@ fi
 # ---- report ----
 if [ -n "$m" ]; then
   wt="$root/.worktrees/$m"
-  slug=$(status_row "$m" | sed -n 's|.*docs/plans/\([A-Za-z0-9._-]*\)\.md.*|\1|p'); [ -n "$slug" ] || slug=$m
+  slug=$(ms_status_slug "$m" "$status_md")
   plan=""
   for d in "$wt" "$root"; do
     [ -d "$d" ] || continue

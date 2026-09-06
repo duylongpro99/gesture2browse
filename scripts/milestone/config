@@ -1,0 +1,7 @@
+# scripts/milestone/config — project settings for scripts/milestone/* (sourced by lib.sh).
+MS_PANE_PREFIX=hg
+MS_COMPONENT_ROOTS="packages apps"
+MS_WHOLE_DIRS="fixtures .github"
+MS_CONTRACT_GLOBS="packages/*/test/contracts/** apps/*/test/contracts/**"
+MS_DEFAULT_BASE=master
+MS_CHECK_ALLOW='^(pnpm|npx|node|turbo|tsc|vitest|playwright|bash|sh|test|\[|scripts/)'
