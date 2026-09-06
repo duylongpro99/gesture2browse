@@ -8,8 +8,8 @@ Tracked history for the execute phase of milestone 1A. Plan: `docs/plans/1A-vert
 | 2 | gesture-core — hierarchical FSM, transition log, replay surface, scroll in CSS px | `.claude/rules/gesture-core.md` | done | 48481dc |
 | 3 | content — execute scroll PageCommand; announce ready | `.claude/rules/content.md` | done | ddf67e6 |
 | 4 | offscreen — derive & publish GestureFrame; test-only injection hook | `.claude/rules/offscreen.md` | done | fe11f4b |
-| 5 | background — consume GestureFrame, run FSM, dispatch scroll | `.claude/rules/background.md` | not started | — |
-| 6 | extension — Playwright e2e: fake camera scrolls a test page | `.claude/rules/fixtures-and-tests.md` | not started | — |
+| 5 | background — consume GestureFrame, run FSM, dispatch scroll | `.claude/rules/background.md` | done | ebf9db0 |
+| 6 | extension — Playwright e2e: fake camera scrolls a test page | `.claude/rules/fixtures-and-tests.md` | done | c708f42 |
 
 ## Exit checks (frozen — see `docs/plans/1A-vertical-slice.md ## Exit checks`)
 
