@@ -44,6 +44,9 @@ importers:
 
   apps/extension:
     dependencies:
+      '@gesture/gesture-core':
+        specifier: workspace:*
+        version: link:../../packages/gesture-core
       '@gesture/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
