@@ -17,6 +17,6 @@ _Project section last updated: 2026-09-05 (driver, on the owner's instruction)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 0E | drv-0E | DONE — G7 gate MET (GO): 9router, fast `deepseel-v4-flash` p50 1574ms, planner `glm-5.2` p50 2653ms, both ≤3s; §8 row drafted (owner logs it + removes this row) | `docs/plans/0E-agent-latency-probe.md` | 2026-09-06 |
+| 0E | drv-0E | DONE — G7 gate MET (GO): 9router, fast `deepseel-v4-flash` p50 1574ms, planner `glm-5.2` p50 2653ms, both ≤3s; PR #5 → master open; §8 row drafted (owner merges PR, logs §8, removes this row) | `docs/plans/0E-agent-latency-probe.md` | 2026-09-06 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
