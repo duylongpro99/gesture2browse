@@ -75,12 +75,22 @@ _Owned by the 0E session; rewritten, not appended._
 - Wrote this plan (five questions), the `**Files:**` block, and the `## Exit checks` table (unfrozen — lock out of scope).
 - Placement decided: `apps/playground` Node CLI + pure harness + `node:http` stub; no new package, no `packages/protocol` change, `agent-core` not built (2A owns it).
 
-**In progress:** none. This session is docs-only (its `.claude/scope.json` has no code paths — first probe session).
+**Done (session 1, execute):**
+- Implemented the `**Files:**` block under `obra-test-driven-development` (test failed first on the missing harness, then green): `src/latency-probe.ts` (SSE parse, first-suggestion timing, nearest-rank p50/p95, tool-calling + `json_schema` detection, 150-item snapshot, `LATENCY_COLUMNS` CSV), `test/latency-probe-stub.ts` (`node:http` OpenAI-compatible SSE stub), `test/latency-probe.test.ts` (12 cases, the E3 agent verification), `src/latency-probe-cli.ts` (owner live runner), `package.json` `probe:latency` script.
+- One deviation from the `**Files:**` block, noted here (no ADR — not a §1–2 break): `tsconfig.json` gains `allowImportingTsExtensions: true`. Node 24 native TS (the 0A `scripts/fixtures/*` precedent, no `tsx`) requires a `.ts` import specifier for the CLI→harness import (verified empirically: `.js` and extensionless both fail to resolve); the flag lets `tsc` accept it. Consistent with the plan's "no new dependency / native Node TS" stance; tests keep the `.js` specifier (Vitest resolves both).
+- Verification (§5): `pnpm --filter @gesture/playground test` → 22 passed; `typecheck` clean; `node scripts/lint/boundary-lint.mjs` → OK; CLI smoke-tested (env validation, `.ts` import resolves under Node 24).
+- Filled `spike-results.md §G7` Setup; handed off `NEEDS-OWNER` for the live run.
 
-**Next:** the execute session (scope derived from the `**Files:**` block) implements the harness + stub + CLI under `obra-test-driven-development` — the stub test is the failing-first test — then hands off `NEEDS-OWNER` with the exact env vars and command the owner runs live (baseURL, key, `fast`/`planner` model ids). On the owner's live numbers: fill `spike-results.md §G7`, then draft the §8 row below and go `DONE`.
+**Done (session 1, owner live run 2026-09-06):**
+- Owner ran the CLI against **9router** (`http://localhost:20128/v1`), 10 iterations, 150-item snapshot. Recorded in `spike-results.md §G7`: fast `deepseel-v4-flash` p50 **1574 ms** (p95 2105), planner `glm-5.2` p50 **2653 ms** (p95 3886) — both first-suggestion p50 ≤ 3000 ms ⇒ **gate MET (GO)**. Capability flags: fast `tool-calling N / json_schema Y`; planner `tool-calling Y / json_schema Y`.
 
-**Proposed decision(s) for roadmap §8 (owner logs; agent does not edit §8):** _drafted after the owner's live run (provider, `fast`/`planner` model ids, p50/p95, tool-calling Y/N, `json_schema` Y/N)._
+**In progress:** none.
 
-**Blockers:** owner's API key + chosen OpenAI-compatible endpoint and the two model ids (reference Haiku 4.5 / Sonnet 5) — a runtime input for the live run, not a planning blocker.
+**Next:** owner logs the roadmap §8 row (drafted below) and removes the 0E STATUS row (owner-only, or the `driving-a-milestone` driver via `scripts/milestone/log-decision --apply`). Milestone 0E exits.
+
+**Proposed decision(s) for roadmap §8 (owner logs; agent does not edit §8):**
+> **G7 (0E) agent latency probe = GO (2026-09-06).** Provider **9router** (OpenAI-compatible gateway); **fast** model `deepseel-v4-flash` (first-suggestion p50 1574 ms / p95 2105 ms; tool-calling N, json_schema Y), **planner** model `glm-5.2` (p50 2653 ms / p95 3886 ms; tool-calling Y, json_schema Y). First-suggestion p50 ≤ 3 s met for both (gate is on p50). **Caveat → 2A:** the fast model is json_schema-only; if the suggestion loop needs tool-calling on the fast path, use `glm-5.2` for the fast role (still 2653 ms p50, clears the gate). Evidence: `spike-results.md §G7`. Unblocks 2A plan inputs (roadmap §5.1 — provider, model ids, `json_schema` support).
+
+**Blockers:** none. (Live run done; §8 logging + STATUS-row removal are owner-only bookkeeping.)
 
 **Superpowers conflicts noted (`CLAUDE.md §6`):** none material; no open design question required the brainstorm companion, so the plan was written directly (the five questions are all answerable from the roadmap row + `03-tech-stack`), matching the 0D docs-only planning session.
