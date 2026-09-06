@@ -106,11 +106,17 @@ _Owned by the 1A session; rewritten, not appended._
 - **Final whole-branch review (opus): Ready to merge — Yes.** No Critical/Important; seam coherence (both directions), video/landmark containment, and single-owner timing all verified by direct inspection; all deferred minors triaged as correctly deferred; four new cosmetic minors logged for 1B/1C hygiene. See `docs/sdd/1A/progress.md`.
 - `exit-check 1A --fast` @ c708f42: **8 PASS / 0 FAIL** (E1, E2, E3, I1–I5), lock OK.
 
+**Done (finish session 5):**
+- Verified (`CLAUDE.md §5`): `pnpm typecheck` 7/7, `boundary-lint` OK, `pnpm test` all suites green; working tree clean at `4dd4abe`.
+- Authoritative `scripts/milestone/exit-check 1A` (full): **8 PASS / 0 FAIL / 0 OWNER**, lock OK (frozen `76503d9`), no `TAMPERED`.
+- Each roadmap §4.1 Exit criterion met (E1/E2/E3 PASS) and each frozen interface (I1–I5) consumable as-is by its named downstream.
+- Pushed `1A` to `origin` and opened the PR to `master` with `gh`. Did **not** merge, did **not** edit §8.
+
 **In progress:** none.
 
-**Next (owner/driver, not the worker session):** open the 1A PR and merge to `master`; then log the roadmap §8 GO row (the frozen-interfaces block below) and remove the 1A STATUS row. The worker session does not merge or edit §8.
+**Next (owner, not the worker session):** review and merge the 1A PR to `master`; then log the roadmap §8 GO row (the frozen-interfaces block below) via `scripts/milestone/log-decision` and remove the 1A STATUS row. The session does not merge or edit §8.
 
-**Blockers:** none. Milestone 1A execute phase is complete; all interfaces frozen and exercised end to end.
+**Blockers:** none. Milestone 1A is complete and verified; all interfaces frozen and exercised end to end; PR open awaiting owner merge.
 
 **Proposed decision(s) for roadmap §8 (owner logs; agent does not edit §8):**
 
