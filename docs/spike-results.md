@@ -187,11 +187,28 @@ pnpm --filter @gesture/playground probe:latency
 
 Optional: `LLM_PROBE_ITERATIONS` (default 10), `LLM_PROBE_SNAPSHOT` (default 150). It runs N timed streaming calls per model with a 150-item snapshot, tools + `response_format: json_schema` in each request, and prints first-suggestion p50/p95, a capability table, and a CSV block (schema `LATENCY_COLUMNS = model,iterations,firstContentMsP50,firstContentMsP95,totalMsP50,totalMsP95,toolCalling,jsonSchema`) to paste below. The key is read from env, sent only as a `Bearer` header, and never written to disk. **Combined-call caveat:** the probe sends `tools` and `response_format: json_schema` in one request to detect both capabilities; if the chosen provider rejects that combination, note it and re-run the two capabilities in separate calls — the p50/p95 latency numbers are unaffected.
 
-**Result (numbers):** _(owner's live run — paste the CLI's CSV block + capability table: first-suggestion p50/p95 for fast and planner; tool-calling Y/N; json_schema Y/N)_
+**Result (numbers):**
 
-**Gate met? (Y/N):** _(owner — first suggestion p50 ≤ 3 s?)_
+_E1 (owner live run, 2026-09-06)_ — provider **9router** via gateway `http://localhost:20128/v1`, 10 iterations, 150-item snapshot:
 
-**Provider + model ids chosen (→ §8):** _(owner — provider, fast model id, planner model id; logged in roadmap §8)_
+| Role | Model | first-suggestion p50 | p95 | total stream p50 | p95 | tool-calling | json_schema |
+|---|---|---|---|---|---|---|---|
+| fast | `deepseel-v4-flash` | **1574 ms** | 2105 ms | 1710 ms | 2221 ms | **N** | Y |
+| planner | `glm-5.2` | **2653 ms** | 3886 ms | 2784 ms | 4037 ms | Y | Y |
+
+CSV (schema `LATENCY_COLUMNS = model,iterations,firstContentMsP50,firstContentMsP95,totalMsP50,totalMsP95,toolCalling,jsonSchema`):
+
+```
+model,iterations,firstContentMsP50,firstContentMsP95,totalMsP50,totalMsP95,toolCalling,jsonSchema
+deepseel-v4-flash,10,1574,2105,1710,2221,false,true
+glm-5.2,10,2653,3886,2784,4037,true,true
+```
+
+**Gate met? (Y/N):** **Y — GO.** First-suggestion p50 ≤ 3000 ms for both models (fast 1574 ms, planner 2653 ms). (The planner's p95 3886 ms exceeds 3 s, but the gate is on p50.)
+
+- **Caveat for 2A (→ roadmap §5.1):** the fast model `deepseel-v4-flash` supports `json_schema` structured output but **not** tool-calling (`tool-calling N`); only the planner `glm-5.2` supports both. Suggestion-loop plans that require tool-calling on the fast path must instead use `glm-5.2` for the fast role (owner's mitigation), trading the ~1.1 s p50 latency headroom for tool-calling — `glm-5.2` at 2653 ms p50 still clears the 3 s gate. 2A owns the final fast/planner assignment.
+
+**Provider + model ids chosen (→ §8):** provider **9router** (OpenAI-compatible gateway); **fast** `deepseel-v4-flash`, **planner** `glm-5.2`. Owner logs the §8 row.
 
 ---
 
@@ -218,7 +235,7 @@ Optional: `LLM_PROBE_ITERATIONS` (default 10), `LLM_PROBE_SNAPSHOT` (default 150
 | G4 Precision/recall | | |
 | G5 Dispatch survey | Y | §G5 above — E3 (agent) synthetic 10/15, CDP 14/15, 4 CDP-rescues; E1 (owner) live run confirmed 2026-09-05. Default = CDP (owner-confirmed); §8 row + `03-tech-stack §4` number logged by owner post-merge |
 | G6 Fitts / ergonomics | | |
-| G7 Agent latency | | |
+| G7 Agent latency | Y | §G7 above — E1 (owner) 9router: fast `deepseel-v4-flash` p50 1574 ms, planner `glm-5.2` p50 2653 ms, both ≤ 3 s; E3 (agent) harness green. Fast model is json_schema-only (no tool-calling); §8 row logged by owner |
 | G8 Inference path | | |
 
 **Committed numbers** (must be entered as numbers in `03-tech-stack §4` before Phase 1 — roadmap §3.4): delegate order · click-dispatch default · click-mode default · hold times.
