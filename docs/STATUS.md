@@ -17,6 +17,6 @@ _Project section last updated: 2026-09-05 (driver, on the owner's instruction)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 0E | unclaimed | Not started (G7 agent latency probe) | `docs/plans/0E-agent-latency-probe.md` | 2026-09-06 |
+| 0E | drv-0E | Not started (G7 agent latency probe) | `docs/plans/0E-agent-latency-probe.md` | 2026-09-06 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
