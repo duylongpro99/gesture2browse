@@ -8,6 +8,9 @@ import {
   GestureLabel,
   PumpStatSchema,
   CameraGrantStatusSchema,
+  PageCommandSchema,
+  PageEventSchema,
+  TransitionLogEntrySchema,
 } from '@gesture/protocol';
 
 describe('GestureFrame v0', () => {
@@ -126,5 +129,55 @@ describe('CameraGrantStatus (G2 camera-grant join message)', () => {
   it('rejects a missing field', () => {
     const { persistent: _omit, ...missing } = sample;
     expect(() => CameraGrantStatusSchema.parse(missing)).toThrow();
+  });
+});
+
+describe('PageCommand v0', () => {
+  it('parses a scroll command', () => {
+    expect(PageCommandSchema.parse({ type: 'scroll', dy: -50 })).toEqual({
+      type: 'scroll',
+      dy: -50,
+    });
+  });
+  it('rejects an unknown type', () => {
+    expect(() => PageCommandSchema.parse({ type: 'click' })).toThrow();
+  });
+  it('rejects a missing dy', () => {
+    expect(() => PageCommandSchema.parse({ type: 'scroll' })).toThrow();
+  });
+});
+
+describe('PageEvent v0', () => {
+  it('parses a ready event', () => {
+    expect(PageEventSchema.parse({ type: 'ready', frameId: 3 })).toEqual({
+      type: 'ready',
+      frameId: 3,
+    });
+  });
+  it('rejects an unknown type', () => {
+    expect(() => PageEventSchema.parse({ type: 'hover' })).toThrow();
+  });
+  it('rejects a non-numeric frameId', () => {
+    expect(() => PageEventSchema.parse({ type: 'ready', frameId: 'main' })).toThrow();
+  });
+});
+
+describe('TransitionLogEntry v0', () => {
+  it('parses an entry without an intent', () => {
+    const entry = { ts: 1, from: 'Idle', to: 'Armed', event: 'ARM' };
+    expect(TransitionLogEntrySchema.parse(entry)).toEqual(entry);
+  });
+  it('parses an entry carrying an intent', () => {
+    const entry = {
+      ts: 1,
+      from: 'Armed',
+      to: 'Scrolling',
+      event: 'SCROLL',
+      intent: { type: 'Scroll', dy: 5 },
+    };
+    expect(TransitionLogEntrySchema.parse(entry).intent).toEqual({ type: 'Scroll', dy: 5 });
+  });
+  it('rejects a missing required field', () => {
+    expect(() => TransitionLogEntrySchema.parse({ ts: 1, from: 'Idle', to: 'Armed' })).toThrow();
   });
 });
