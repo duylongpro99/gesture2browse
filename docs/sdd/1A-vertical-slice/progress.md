@@ -4,8 +4,8 @@ Tracked history for the execute phase of milestone 1A. Plan: `docs/plans/1A-vert
 
 | Task | Title | Owner rule | State | Commit |
 |---|---|---|---|---|
-| 1 | protocol — freeze Intent; add PageCommand, PageEvent, TransitionLogEntry, port names | `.claude/rules/protocol.md` | not started | — |
-| 2 | gesture-core — hierarchical FSM, transition log, replay surface, scroll in CSS px | `.claude/rules/gesture-core.md` | not started | — |
+| 1 | protocol — freeze Intent; add PageCommand, PageEvent, TransitionLogEntry, port names | `.claude/rules/protocol.md` | done | 17a4b87 |
+| 2 | gesture-core — hierarchical FSM, transition log, replay surface, scroll in CSS px | `.claude/rules/gesture-core.md` | done | 48481dc |
 | 3 | content — execute scroll PageCommand; announce ready | `.claude/rules/content.md` | not started | — |
 | 4 | offscreen — derive & publish GestureFrame; test-only injection hook | `.claude/rules/offscreen.md` | not started | — |
 | 5 | background — consume GestureFrame, run FSM, dispatch scroll | `.claude/rules/background.md` | not started | — |
