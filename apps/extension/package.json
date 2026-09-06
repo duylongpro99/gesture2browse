@@ -13,6 +13,7 @@
     "lint": "eslint entrypoints"
   },
   "dependencies": {
+    "@gesture/gesture-core": "workspace:*",
     "@gesture/protocol": "workspace:*",
     "@mediapipe/tasks-vision": "1.0.1",
     "react": "^19.2.0",

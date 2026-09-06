@@ -1,6 +1,7 @@
-import type { Delegate } from '@gesture/protocol';
+import type { Delegate, GestureFrame } from '@gesture/protocol';
 import { createHandLandmarker } from './mediapipe';
 import { FpsLogger } from './fps-logger';
+import { createGestureFrameSource } from './gesture-frame';
 
 // G1 inference worker. It consumes the transferred ReadableStream<VideoFrame>,
 // draws each frame to an OffscreenCanvas, runs HandLandmarker.detectForVideo,
@@ -23,7 +24,8 @@ export interface StartPump {
 export type WorkerMsg =
   | { type: 'ready'; delegate: Delegate }
   | { type: 'error'; error: string }
-  | { type: 'stat'; ts: number; fps: number; frames: number; windowMs: number; delegate: Delegate };
+  | { type: 'stat'; ts: number; fps: number; frames: number; windowMs: number; delegate: Delegate }
+  | { type: 'frame'; frame: GestureFrame };
 
 // Minimal worker-scope shape (avoids pulling the webworker lib program-wide,
 // which would collide with the MediaStreamTrackProcessor declaration in main.ts).
@@ -47,6 +49,7 @@ async function run(msg: StartPump): Promise<void> {
   if (!draw) throw new Error('OffscreenCanvas 2d context unavailable');
 
   const log = new FpsLogger(msg.windowMs);
+  const gestureFrames = createGestureFrameSource();
   const reader = msg.stream.getReader();
   let sized = false;
   let lastEmit = performance.now();
@@ -66,13 +69,22 @@ async function run(msg: StartPump): Promise<void> {
     frame.close();
 
     videoTs += 1;
+    const now = performance.now();
+    // Flatten hand[0]'s 21 {x,y,z} points to a flat number[63], or null when no
+    // hand is present. Landmarks never leave this worker — only the derived
+    // GestureFrame (without a `landmarks` field) is posted out.
+    let flatLandmarks: number[] | null = null;
     try {
-      landmarker.detectForVideo(canvas, videoTs);
+      const result = landmarker.detectForVideo(canvas, videoTs);
+      const hand = result.landmarks[0];
+      if (hand) {
+        flatLandmarks = hand.flatMap((p) => [p.x, p.y, p.z]);
+      }
     } catch {
       // A single detect failure must not stall the pump; keep measuring delivery.
     }
+    ctx.postMessage({ type: 'frame', frame: gestureFrames.next(flatLandmarks, now) } satisfies WorkerMsg);
 
-    const now = performance.now();
     log.mark(now);
     if (now - lastEmit >= msg.windowMs) {
       const w = log.sample(now);

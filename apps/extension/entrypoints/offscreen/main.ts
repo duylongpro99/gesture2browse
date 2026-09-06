@@ -1,16 +1,18 @@
 /// <reference types="vite/client" />
 import { browser } from 'wxt/browser';
-import type { PumpStat } from '@gesture/protocol';
+import type { PumpStat, GestureFrame } from '@gesture/protocol';
+import { PortName } from '@gesture/protocol';
 import InferenceWorker from './inference.worker?worker';
 import type { StartPump, WorkerMsg } from './inference.worker';
 
 // Offscreen document — owner of the camera and the G1 frame pump. It opens the
 // camera, wires getUserMedia -> MediaStreamTrackProcessor -> a transferred
 // ReadableStream<VideoFrame> into the inference worker, then relays each fps
-// window to the service worker as a PumpStat. Raw video and VideoFrame never
-// leave this document (they are transferred into the worker and closed there);
-// only the numeric PumpStat crosses to the SW, which owns chrome.storage
-// (.claude/rules/offscreen.md forbids storage here).
+// window to the service worker as a PumpStat, and each derived GestureFrame
+// over a runtime Port. Raw video and VideoFrame never leave this document
+// (they are transferred into the worker and closed there); only the numeric
+// PumpStat and the (landmarks-less) GestureFrame cross to the SW, which owns
+// chrome.storage (.claude/rules/offscreen.md forbids storage here).
 
 // MediaStreamTrackProcessor is a Chrome global not yet in lib.dom.
 declare global {
@@ -31,6 +33,10 @@ const WINDOW_MS = 2000;
 const origin = browser.runtime.getURL('/');
 const WASM_BASE = new URL('wasm', origin).href;
 const MODEL_URL = new URL('models/hand_landmarker.task', origin).href;
+
+// Long-lived Port to the service worker carrying discrete GestureFrames (arch
+// §3.1/§3.2). Opened once at document load, independent of pump start/stop.
+const swPort = browser.runtime.connect({ name: PortName.OffscreenToServiceWorker });
 
 async function startPump(): Promise<void> {
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -58,6 +64,8 @@ async function startPump(): Promise<void> {
       void browser.runtime.sendMessage({ type: 'PumpStat', stat });
     } else if (m.type === 'error') {
       void browser.runtime.sendMessage({ type: 'PumpError', error: m.error });
+    } else if (m.type === 'frame') {
+      swPort.postMessage(m.frame);
     }
   };
 
@@ -75,3 +83,20 @@ async function startPump(): Promise<void> {
 void startPump().catch((err) => {
   void browser.runtime.sendMessage({ type: 'PumpError', error: String(err) });
 });
+
+// Test-only hook: lets a Playwright test (Task 6) drive a deterministic gesture
+// over the same port without a trained classifier, by injecting synthetic
+// GestureFrames directly. `VITE_TEST_HOOKS` is never set by `wxt build`
+// (production), so this entire block — including the onMessage listener — is
+// absent from production output.
+if (import.meta.env.VITE_TEST_HOOKS === '1') {
+  interface InjectFrames {
+    type: '__inject_frames';
+    frames: GestureFrame[];
+  }
+  browser.runtime.onMessage.addListener((message: unknown) => {
+    const m = message as Partial<InjectFrames> | undefined;
+    if (m?.type !== '__inject_frames' || !Array.isArray(m.frames)) return;
+    for (const frame of m.frames) swPort.postMessage(frame);
+  });
+}
