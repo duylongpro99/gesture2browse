@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
+    "probe:latency": "node src/latency-probe-cli.ts",
     "test:bench": "playwright test -c playwright.config.ts",
     "lint": "eslint src test",
     "typecheck": "tsc --noEmit -p tsconfig.json"
