@@ -27,5 +27,6 @@ export default defineConfig({
   projects: [
     { name: 'frame-pump', testMatch: '**/frame-pump.e2e.ts' },
     { name: 'camera-grant', testMatch: '**/camera-grant.e2e.ts' },
+    { name: 'scroll-slice', testMatch: '**/scroll-slice.e2e.ts' },
   ],
 });
