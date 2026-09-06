@@ -2,10 +2,17 @@ import { browser } from 'wxt/browser';
 import {
   PumpStatSchema,
   CameraGrantStatusSchema,
+  GestureFrameSchema,
+  PageEventSchema,
+  PortName,
   type PumpStat,
   type CameraPermissionState,
+  type TransitionLogEntry,
 } from '@gesture/protocol';
 import { deriveGrant } from './grant-camera/permission';
+import { createFrameConsumer } from './background/fsm';
+import { dispatchIntent } from './background/dispatcher';
+import { createPortRegistry, type RegistryPort } from './background/ports';
 
 // Service worker — control plane. It does the three things the offscreen/grant
 // APIs force here:
@@ -25,6 +32,26 @@ const MAX_SERIES = 600; // ~20 min of 2 s windows; bounds session storage.
 const SESSION_STATUS_KEY = 'cameraGrantStatus';
 const PRECHECK_KEY = 'cameraPrecheck';
 const SEEN_KEY = 'cameraGrantSeen';
+const TRANSITION_SERIES_KEY = 'transitionSeries';
+const TRANSITION_LATEST_KEY = 'transitionLatest';
+
+// Diagnostic-only (arch §3.2 / 1D.5): appends the FSM's per-frame transition
+// entries to a bounded chrome.storage.session series, reusing the same
+// bounding pattern as `record()` above. Not a secret (.claude/rules/
+// background.md) — timing/state labels only.
+async function persistTransitions(entries: TransitionLogEntry[]): Promise<void> {
+  if (entries.length === 0) return;
+  const cur = await browser.storage.session.get([TRANSITION_SERIES_KEY]);
+  const series: TransitionLogEntry[] = Array.isArray(cur[TRANSITION_SERIES_KEY])
+    ? (cur[TRANSITION_SERIES_KEY] as TransitionLogEntry[])
+    : [];
+  series.push(...entries);
+  if (series.length > MAX_SERIES) series.splice(0, series.length - MAX_SERIES);
+  await browser.storage.session.set({
+    [TRANSITION_LATEST_KEY]: entries[entries.length - 1],
+    [TRANSITION_SERIES_KEY]: series,
+  });
+}
 
 async function ensureOffscreen(): Promise<void> {
   if (await browser.offscreen.hasDocument()) return;
@@ -136,6 +163,29 @@ async function gateThenPump(): Promise<void> {
 }
 
 export default defineBackground(() => {
+  const ports = createPortRegistry();
+  const consumer = createFrameConsumer({
+    dispatch: (intent) => dispatchIntent(intent, ports.currentContentTarget()),
+    persist: persistTransitions,
+  });
+
+  browser.runtime.onConnect.addListener((port: RegistryPort) => {
+    if (port.name === PortName.OffscreenToServiceWorker) {
+      ports.registerOffscreen(port);
+      port.onMessage.addListener((message: unknown) => {
+        const parsed = GestureFrameSchema.safeParse(message);
+        if (!parsed.success) return; // page/offscreen is hostile; ignore malformed frames.
+        consumer.push(parsed.data);
+      });
+    } else if (port.name === PortName.ServiceWorkerToContent) {
+      ports.registerContent(port);
+      port.onMessage.addListener((message: unknown) => {
+        // 1A's only inbound PageEvent is `ready`; validate before acting.
+        PageEventSchema.safeParse(message);
+      });
+    }
+  });
+
   browser.runtime.onMessage.addListener((msg: unknown) => {
     if (typeof msg !== 'object' || msg === null) return;
     const type = (msg as { type?: unknown }).type;
