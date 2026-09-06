@@ -171,13 +171,27 @@ _E1 (owner spot-check):_ **met — owner-confirmed 2026-09-05** (re-ran `SURVEY_
 - **Threshold:** first suggestion **≤ 3 s p50**; the intended provider's `fast` and `planner` models (reference Haiku 4.5 / Sonnet 5 via an OpenAI-compatible endpoint), 150-item snapshot, streamed structured output; tool-calling and `json_schema` support verified (`03-tech-stack §5.7`).
 - **Produced by:** milestone 0E (runs with owner's API key).
 
-**Setup:** _(provider + endpoint; fast/planner model ids; snapshot size)_
+**Setup:**
 
-**Result (numbers):** _(first-suggestion p50/p95; tool-calling Y/N; json_schema Y/N)_
+_E3 — agent side_ (`apps/playground/test/latency-probe.test.ts`, milestone 0E; camera- and key-free, runs in CI via `pnpm test`): the pure harness `apps/playground/src/latency-probe.ts` (SSE parser, per-call first-suggestion timing, nearest-rank p50/p95, tool-calling + `json_schema` detection, 150-item snapshot builder, `LATENCY_COLUMNS` CSV) is driven by `runProbe(config, fetch)` against `apps/playground/test/latency-probe-stub.ts` — a `node:http` OpenAI-compatible server streaming canned SSE (a role delta, content deltas with a configurable inter-chunk delay, a `tool_calls` delta, a `json_schema`-valid assembled final message, `[DONE]`) over the real global `fetch`. Asserts: SSE chunks parsed to first content across chunk boundaries; first-suggestion latency measured per call (`> 0`, `<= total`); p50/p95 computed over N runs (nearest-rank, checked against the known `1..100` distribution → 50 / 95); tool-calling detected; `json_schema`-valid structured output detected; `LATENCY_COLUMNS` header and CSV rows well-formed. Command: `pnpm --filter @gesture/playground test`. Machine: agent CI sandbox (darwin). **Fidelity caveat** (like 0D's "Playwright CDP, not `chrome.debugger`"): this is Node `fetch`, not the service-worker `fetch`, and a canned stub, not a real provider — the SSE wire format and streaming API are identical, but the deciding p50/p95 and the real capability flags come only from E1.
 
-**Gate met? (Y/N):**
+_E1 — owner run_ (gate-deciding, needs the owner's key; not CI): the CLI `apps/playground/src/latency-probe-cli.ts` against the real OpenAI-compatible endpoint. Set the four env vars and run:
 
-**Provider + model ids chosen (→ §8):**
+```
+LLM_PROVIDER_BASE_URL=<endpoint, e.g. https://api.example.com/v1> \
+LLM_PROVIDER_KEY=<provider key> \
+LLM_FAST_MODEL=<fast model id, reference Haiku 4.5> \
+LLM_PLANNER_MODEL=<planner model id, reference Sonnet 5> \
+pnpm --filter @gesture/playground probe:latency
+```
+
+Optional: `LLM_PROBE_ITERATIONS` (default 10), `LLM_PROBE_SNAPSHOT` (default 150). It runs N timed streaming calls per model with a 150-item snapshot, tools + `response_format: json_schema` in each request, and prints first-suggestion p50/p95, a capability table, and a CSV block (schema `LATENCY_COLUMNS = model,iterations,firstContentMsP50,firstContentMsP95,totalMsP50,totalMsP95,toolCalling,jsonSchema`) to paste below. The key is read from env, sent only as a `Bearer` header, and never written to disk. **Combined-call caveat:** the probe sends `tools` and `response_format: json_schema` in one request to detect both capabilities; if the chosen provider rejects that combination, note it and re-run the two capabilities in separate calls — the p50/p95 latency numbers are unaffected.
+
+**Result (numbers):** _(owner's live run — paste the CLI's CSV block + capability table: first-suggestion p50/p95 for fast and planner; tool-calling Y/N; json_schema Y/N)_
+
+**Gate met? (Y/N):** _(owner — first suggestion p50 ≤ 3 s?)_
+
+**Provider + model ids chosen (→ §8):** _(owner — provider, fast model id, planner model id; logged in roadmap §8)_
 
 ---
 
