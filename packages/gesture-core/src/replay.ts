@@ -15,9 +15,12 @@ function dottedPath(value: unknown): string {
 }
 
 export interface GestureRunner {
-  // Sends one frame through the machine and returns the Intents/TransitionLogEntry
-  // list accumulated across all frames sent so far (one owner for timing AND log
-  // shape; the service worker's live log reuses this, per Task 5).
+  // Sends one frame through the machine and returns THAT frame's delta only:
+  // the Intent(s) it emitted (typically 0-1) and the TransitionLogEntry
+  // (0-1) produced by it, whenever the state value changed or an intent was
+  // emitted. Callers accumulate across calls themselves (one owner for
+  // timing AND log shape; the service worker's live log reuses this as-is
+  // for its live-growing log, per Task 5).
   send(frame: FrameInput): { intents: Intent[]; transitions: TransitionLogEntry[] };
 }
 
@@ -29,9 +32,6 @@ export function createGestureRunner(): GestureRunner {
   actor.on('Scroll', (e) => buffered.push(e));
   actor.start();
 
-  const intents: Intent[] = [];
-  const transitions: TransitionLogEntry[] = [];
-
   return {
     send(frame: FrameInput) {
       buffered = [];
@@ -40,22 +40,27 @@ export function createGestureRunner(): GestureRunner {
       const to = dottedPath(actor.getSnapshot().value);
       const emitted = buffered;
 
-      intents.push(...emitted);
+      const transitions: TransitionLogEntry[] = [];
       if (to !== from || emitted.length > 0) {
         const entry: TransitionLogEntry = { ts: frame.ts, from, to, event: 'FRAME' };
         if (emitted.length > 0) entry.intent = emitted[0];
         transitions.push(entry);
       }
-      return { intents, transitions };
+      return { intents: emitted, transitions };
     },
   };
 }
 
 export function replayFrames(frames: FrameInput[]): { intents: Intent[]; transitions: TransitionLogEntry[] } {
   const runner = createGestureRunner();
-  let result: { intents: Intent[]; transitions: TransitionLogEntry[] } = { intents: [], transitions: [] };
-  for (const frame of frames) result = runner.send(frame);
-  return result;
+  const intents: Intent[] = [];
+  const transitions: TransitionLogEntry[] = [];
+  for (const frame of frames) {
+    const delta = runner.send(frame);
+    intents.push(...delta.intents);
+    transitions.push(...delta.transitions);
+  }
+  return { intents, transitions };
 }
 
 // Drives each fixture frame through normalize -> classifier -> FSM, collecting the
