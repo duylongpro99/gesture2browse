@@ -68,3 +68,49 @@ Task 4: minor (deferred, implementer-flagged): pointer is raw uncalibrated Media
 
 Both owned tasks (3, 4) complete → CONTINUE. Tasks 5 (background) and 6 (e2e) remain for later sessions. The five Task-3/4 deferred minors above are carried to the final whole-branch review (at Task 6).
 
+## Session 4 (execute Tasks 5–6)
+Owns Tasks 5 (`background`) and 6 (`extension` e2e) per `.claude/scope.json`. Base before Task 5: eb621c2.
+
+### Preflight scan (Tasks 5–6)
+| Pair / task | produces → consumes | Finding |
+|---|---|---|
+| Task 4 → Task 5 | offscreen connects `OffscreenToServiceWorker`, posts raw `GestureFrame` objects; Task 5 SW `onConnect` accepts that port, `GestureFrameSchema.safeParse` each, feeds FSM | Offscreen-initiated connect, SW validates. Direction + payload agree. Consistent. |
+| Task 3 → Task 5 | content connects `ServiceWorkerToContent`, posts `PageEvent{ready,frameId:0}`; Task 5 SW registers that content port, `PageEventSchema.safeParse` before use | SW is the port registry; direction agrees. Consistent. |
+| Task 5 → Task 6 | Task 5 completes the SW middle (FSM + dispatch to content port); Task 6 injects scripted `GestureFrame`s at the offscreen hook → asserts page scrolls end-to-end over the wired slice (Tasks 3,4,5) | Sequential dependency 5→6. Consistent. |
+| Task 5 self | `background.ts` calls the wxt `defineBackground` global at module load (not vitest-importable) vs `dispatcher.test.ts`/`fsm-wiring.test.ts` | Same ruling as Tasks 3/4: extract pure logic into the three sibling modules the plan already prescribes (`background/fsm.ts`, `dispatcher.ts`, `ports.ts`) that the tests import; `background.ts` only wires them via `onConnect`. Ruling: `fsm`/`dispatcher` take an injectable port-target + storage so tests need no `chrome.*`. Cost if wrong: a small module seam to refold. |
+| Task 5 self | GestureFrame→FrameInput mapping vs `createGestureRunner().send(FrameInput)` (Task 2, complete) | `GestureFrame` is a superset of `FrameInput` (`{ts,present,gesture?,score,velocity}`); the map is a field subset. `send` returns a per-frame `{intents,transitions}` delta; SW accumulates transitions into a bounded `storage.session` series. Consistent. |
+| Task 6 self | injected `GestureFrame` must pass `GestureFrameSchema` AND drive the FSM to `Scroll` | Frames crafted with `gesture:'Open_Palm'`/`'Closed_Fist'` (valid `GestureLabel`), `score≥MIN_CONFIDENCE(0.5)`, palm ts-span ≥ `PALM_CLUTCH_MS(1000)`, fist `velocity.vy≥SCROLL_STEP(0.02)`. Ruling: the e2e imports these constants from `@gesture/gesture-core` rather than hardcoding them — no second source of timing truth (CLAUDE.md §2). Consistent. |
+
+Scan clean; sequential dispatch 5 → 6.
+
+### Tasks
+Base before Task 5: eb621c2
+Task 5: implemented (commit ebf9db0) — new `background/dispatcher.ts` (`dispatchIntent`: `Scroll`→`PageCommandSchema.parse({type:'scroll',dy})` to an injected `CommandTarget`; Arm/Pause no-op in 1A), `background/ports.ts` (`createPortRegistry`: single offscreen port + `Map<tabId,port>` content ports, `onDisconnect` cleanup, `currentContentTarget()`), `background/fsm.ts` (`toFrameInput` GestureFrame→FrameInput subset; `createFrameConsumer({dispatch,persist})` owns one `createGestureRunner`); `background.ts` additive `onConnect` wiring — validates each inbound msg (`GestureFrameSchema`/`PageEventSchema` safeParse) before acting, feeds FSM, persists `TransitionLogEntry[]` to `storage.session` (reused `MAX_SERIES` bound). 7/7 focused + 27/27 suite, typecheck clean, boundary-lint OK. Pre-existing camera/pump code untouched (additive diff).
+
+Task 5 review: Spec ✅, Boundary gate PASS (background.md), Task quality Approved (sonnet). No Critical/Important. One ⚠️ (PageEventSchema.safeParse result discarded — controller-resolved: NOT a gap; brief says "validate before use" and 1A has no consumer of `ready` yet, so validation-with-no-consumer is the intended scope). Two deferred minors below.
+Task 5: complete (commits eb621c2..ebf9db0, review clean). exit-check pending (run after Task 5 per brief step 0).
+Task 5: minor (deferred): `ports.ts` tabId-keying fallback (monotonic id when `sender.tab.id` absent) + `onDisconnect` cleanup have no dedicated `ports.test.ts` — exercised only indirectly via test doubles; Task 6 e2e covers the wired whole.
+Task 5: minor (deferred): `background.ts:183-184` `PageEventSchema.safeParse(message)` result is unused (intentional no-op until a `ready` consumer exists) — a `void`/`// TODO(1B): gate on ready` would mark the intent explicit.
+
+Base before Task 6: ebf9db0
+Task 6: implemented (commit c708f42) — `apps/extension/test/scroll-slice.e2e.ts` builds the extension with `VITE_TEST_HOOKS=1`, launches a persistent context with the fake camera (`--use-fake-device/-ui-for-media-stream` + y4m), serves a tall `test/fixtures/scroll-page.html` over a node `http` server, injects a scripted palm-hold→fist `GestureFrame` sequence via `sw.evaluate(chrome.runtime.sendMessage({type:'__inject_frames',...}))`, and asserts `window.scrollY > 0` (reached 240). Timing derived from `@gesture/gesture-core` constants (no literal duplication). `playwright.config.ts` gains the `scroll-slice` project. E2 now green. Concerns: shared `.output/chrome-mv3` build dir (safe: E2 runs this spec in isolation); fixed 2s content-ready settle wait (frame-pump style).
+
+Task 6 review: Spec ✅, Boundary gate PASS (fixtures-and-tests.md), Task quality Approved (sonnet). One "Important" the reviewer itself self-adjudicated as "not a defect in this diff / no fix required" (shared `.output/chrome-mv3` build dir is safe only while `workers:1` and no `*_SKIP_BUILD` env are set); two Minor; one ⚠️ (tsc/boundary-lint accepted as reported, not re-run).
+Task 6: Ruling — the shared-`.output` "Important" is parked, not fixed: it is not a defect in the Task-6 diff (reviewer concurs), does NOT affect the frozen E2 check (which runs `scroll-slice.e2e.ts` in isolation, never alongside frame-pump), and is contingent on future config changes outside this diff. Cost if wrong: a future combined multi-project run with a `*_SKIP_BUILD` env could load a test-hooks build into frame-pump — caught the moment such a run is added, fixed then with a distinct outDir. Carried to the final whole-branch review.
+Task 6: complete (commits ebf9db0..c708f42, review clean; 1 parked). exit-check 1A --fast @ c708f42: 8 PASS / 0 FAIL (E2 now green). Lock OK.
+Task 6: minor (deferred): fixed 2s content-ready settle wait (frame-pump precedent) — could poll for the `ready` PageEvent instead.
+
+Both owned tasks (5, 6) complete → all six 1A tasks done. Dispatching the final whole-branch review (merge-base ee767de..c708f42) to triage every deferred minor.
+
+Ruling (bookkeeping): the worker writes this prose ledger; the slug-path table ledger (`docs/sdd/1A-vertical-slice/progress.md`) State/Commit for Tasks 5–6 is left to the driver's standing authorization (session-3 answer #1). Cost if wrong: a stale State row the driver already owns fixing.
+
+### Final whole-branch review (opus, merge-base ee767de..c708f42)
+**Ready to merge — Yes.** No Critical, no Important. All three focus invariants verified by direct code inspection: (a) the frozen seam is coherent both directions (offscreen `GestureFrame` ↔ background `GestureFrameSchema` ↔ gesture-core `FrameInput`; background `PageCommand` ↔ content validate+`scrollBy`), and `gesture` is always a valid `GestureLabel` (`'none'` fallback in the enum) so no valid frame is dropped at validation; (b) video/landmark containment holds (worker flattens hand[0]→number[63], `frame.close()`s the `VideoFrame`, posts only landmarks-less `GestureFrame`); (c) single-owner timing — no gesture-timing constant in offscreen/background/content production code. All 9 logged deferred minors triaged **correctly deferred**. Four new Minor (non-blocking, deferred to 1B/1C hygiene):
+- `scroll-slice.e2e.ts:11` unused import `SCROLL_PX_PER_UNIT` (referenced only in a comment) — dead, harmless (test/ not linted, `noUnusedLocals` off).
+- `scroll-slice.e2e.ts:110` comment says "positive vy → scrollY up" — backwards; the CODE is correct (positive dy scrolls down, `scrollY` increases, which the test asserts), only the comment is wrong.
+- `background.ts persistTransitions` read-modify-write on `storage.session` is not serialized — two rapid transitions could interleave and drop a diagnostic entry; negligible (transitions are rare, diagnostic-only).
+- `offscreen/gesture-frame.ts:14 POINTER_FILTER_OPTS` — reviewer confirmed these are 1€ pointer-smoothing cutoffs, NOT gesture-timing; does not cross the boundary. Logged as "considered, acceptable".
+
+Milestone 1A execute phase COMPLETE: all six tasks done + reviewed clean (Task 6 with 1 parked), final whole-branch review clean, 8/8 exit checks PASS, lock OK. Next step (owner/driver, not the worker): PR + merge to master, then log roadmap §8 + remove STATUS row. Workspace retained (merge not yet done).
+
+

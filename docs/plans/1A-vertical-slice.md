@@ -100,11 +100,17 @@ _Owned by the 1A session; rewritten, not appended._
 - `exit-check 1A --fast` @ fe11f4b: 7 PASS (E1, E3, I1–I5), 1 FAIL (E2 — the scroll e2e exists only at Task 6). E3 boundary lint now passes with content + offscreen wired. Lock OK.
 - 5 deferred minors (none blocking) carried to the final whole-branch review at Task 6 — see `docs/sdd/1A/progress.md`.
 
+**Done (execute session 4, Tasks 5–6 — final tasks):**
+- Task 5 `[background]` (commit ebf9db0): the service worker's `browser.runtime.onConnect` accepts `OffscreenToServiceWorker` (validates each message with `GestureFrameSchema` before feeding the FSM) and `ServiceWorkerToContent` (registers the content port, validates `PageEventSchema`). New sibling modules keep `background.ts` additive and the logic vitest-testable without `chrome.*`: `background/fsm.ts` (`toFrameInput` GestureFrame→FrameInput subset; `createFrameConsumer` owns one `createGestureRunner`, forwards intents, persists `TransitionLogEntry[]` to a bounded `storage.session` series), `background/dispatcher.ts` (`Scroll`→`PageCommandSchema.parse({type:'scroll',dy})` to the content port; Arm/Pause no page command in 1A), `background/ports.ts` (offscreen port + per-tab content-port `Map`, `onDisconnect` cleanup). 7/7 new + 27/27 suite; review Spec ✅ / Boundary gate PASS / Approved.
+- Task 6 `[extension]` (commit c708f42): `test/scroll-slice.e2e.ts` builds the extension with `VITE_TEST_HOOKS=1`, launches a fake-camera persistent context (y4m), serves a tall `test/fixtures/scroll-page.html` over a node `http` server, injects a scripted palm-hold→fist `GestureFrame` sequence via the offscreen `__inject_frames` hook (`sw.evaluate` → `chrome.runtime.sendMessage`), and asserts `window.scrollY > 0` (reached 240). Timing derived from `@gesture/gesture-core` constants (no literal duplication). `playwright.config.ts` gains the `scroll-slice` project. **Exit E2 now green.** Review Spec ✅ / Boundary gate PASS / Approved (1 parked: shared `.output` build dir — not a diff defect, safe under `workers:1`/per-spec isolation).
+- **Final whole-branch review (opus): Ready to merge — Yes.** No Critical/Important; seam coherence (both directions), video/landmark containment, and single-owner timing all verified by direct inspection; all deferred minors triaged as correctly deferred; four new cosmetic minors logged for 1B/1C hygiene. See `docs/sdd/1A/progress.md`.
+- `exit-check 1A --fast` @ c708f42: **8 PASS / 0 FAIL** (E1, E2, E3, I1–I5), lock OK.
+
 **In progress:** none.
 
-**Next:** execute Task 5 (`background`: consume `GestureFrame`, run the FSM via `createGestureRunner`, map `Scroll`→`PageCommand`, persist the transition log to `storage.session`) then Task 6 (Playwright fake-camera e2e), one component per session; run `exit-check 1A --fast` after each. E2 (Playwright) goes green at Task 6.
+**Next (owner/driver, not the worker session):** open the 1A PR and merge to `master`; then log the roadmap §8 GO row (the frozen-interfaces block below) and remove the 1A STATUS row. The worker session does not merge or edit §8.
 
-**Blockers:** none.
+**Blockers:** none. Milestone 1A execute phase is complete; all interfaces frozen and exercised end to end.
 
 **Proposed decision(s) for roadmap §8 (owner logs; agent does not edit §8):**
 
