@@ -92,6 +92,8 @@ _Owned by the 1A session; rewritten, not appended._
 - Task 2 `[gesture-core]` (commits 1afe418..48481dc, 1 fix round): `Armed` compound state `{Idle,Scrolling}`; scroll `dy = Math.round(vy * SCROLL_PX_PER_UNIT)` (new tunable, v0=400); `createGestureRunner()`/`replayFrames()` replay surface returning per-frame `TransitionLogEntry` deltas (fix round 1 corrected `send()` from cumulative→per-frame per brief + Task 5 consumer). Contract I5 + E1 replay green. Task review clean after fix.
 - `exit-check 1A --fast` @ 48481dc: 7 PASS (E1, E3, I1–I5), 1 FAIL (E2 — the scroll e2e does not exist until Task 6). Lock OK.
 
+**Verified (execute session 2, reconcile):** Tasks 1–2 re-verified at 75193c0 — typecheck clean, vitest 67/67, `exit-check 1A --fast` 7 PASS / 1 FAIL (E2 pending Task 6), lock OK. No regression; ledger confirmed.
+
 **In progress:** none.
 
 **Next:** execute Tasks 3→6 in order (content → offscreen → background → e2e), one component per session; run `exit-check 1A --fast` after each. E2 (Playwright) goes green at Task 6.

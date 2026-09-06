@@ -28,5 +28,9 @@ Task 2: fix round 1/5 (1 addressed, 0 open — send() now per-frame delta, repla
 Task 2: complete (commits 17a4b87..48481dc, review clean) — 21/21 gesture-core tests pass, typecheck clean.
 
 Both owned tasks (1, 2) complete. Tasks 3-6 (content, offscreen, background, e2e) remain for later sessions → CONTINUE.
+
+## Session 2 (reconcile)
+Verified committed Tasks 1–2 at 75193c0 (owner answer #2): typecheck clean, vitest 67/67 green, exit-check 7 PASS / 1 FAIL (E2 pending Task 6), lock OK. No regression, no ledger change needed beyond this note. Session 3 does Task 3.
+
 Deferred minor (for final whole-branch review at Task 6): replay.ts `emitted[0]` single-intent attach on TransitionLogEntry — matches brief's singular `intent?`; revisit only if the machine ever adds multi-intent transitions.
 
