@@ -1,6 +1,6 @@
 # SDD ledger — plan: docs/plans/1B.impl.md
 
-Milestone 1B (perception pipeline). Plan: `docs/plans/1B-perception.md` (five questions + Exit checks). Spec: `docs/plans/1B.spec.md` (binding authority). Impl: `docs/plans/1B.impl.md`. SDD workspace: `docs/sdd/1B/`.
+Milestone 1B (perception pipeline). Plan: `docs/plans/1B.md` (five questions + Exit checks). Spec: `docs/plans/1B.spec.md` (binding authority). Impl: `docs/plans/1B.impl.md`. SDD workspace: `docs/sdd/1B/`.
 
 Owner decisions 2026-09-07 (all option a, `docs/sdd/1B/driver.json`): browser-inference path only; offline-trained MLP behind the `Classifier` seam; frozen `GestureLabel` vocabulary + additive `GestureFrame.palmFacing`; proceed on the MOCK G4 with Exit E1 owner-deferred.
 
@@ -27,4 +27,4 @@ Owner decisions 2026-09-07 (all option a, `docs/sdd/1B/driver.json`): browser-in
 
 ## Session 0 (plan)
 
-Produced `1B.spec.md`, `1B.impl.md`, `1B-perception.md` (Exit checks E1–E3, no I-rows — the roadmap row has no "Interfaces fixed here"), and this ledger. Five-question checklist run on `1B.impl.md`. `exit-check 1B --fast` parses the 3-row table (E2/E3 FAIL only because this worktree has no `node_modules` and no code yet; commands mirror 1A's working form). Handoff DONE → execute session 1 starts at Task 1.
+Produced `1B.spec.md`, `1B.impl.md`, `1B.md` (Exit checks E1–E3, no I-rows — the roadmap row has no "Interfaces fixed here"), and this ledger. Five-question checklist run on `1B.impl.md`. `exit-check 1B --fast` parses the 3-row table (E2/E3 FAIL only because this worktree has no `node_modules` and no code yet; commands mirror 1A's working form). Handoff DONE → execute session 1 starts at Task 1.
