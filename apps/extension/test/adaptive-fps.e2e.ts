@@ -25,18 +25,26 @@ import type { PumpStat } from '@gesture/protocol';
 // transition to assert: early windows (< idleWindowMs since pump start) report
 // ~30 fps, late windows (well past it) report ~15 fps.
 //
-// Context-loss recovery (`webglcontextlost` -> recreate) is exercised by the
-// worker code but cannot be simulated headlessly within this test's scope: the
-// worker listens on the worker global and the recreate path needs a real
-// WEBGL_lose_context on MediaPipe's internal GL context, which is not reachable
-// from a Playwright target without a worker test hook (out of Task 7's file
-// scope). It stays owner real-browser verification (progress.md, session 3). This
-// test verifies the frozen E3 criterion: the 30/15 adaptation.
+// Context-loss recovery (`webglcontextlost` -> recreate): finding 2 (session-5
+// review) fixed the wiring — the worker now owns the OffscreenCanvas it hands
+// MediaPipe for the GL context and listens for the loss on THAT surface (the old
+// listener was on the worker global `self`, where the event never fires, so the
+// recreate was dead code). The second test below drives a real
+// `WEBGL_lose_context` on that surface through a `VITE_TEST_HOOKS`-gated
+// BroadcastChannel hook and asserts the pump survives (keeps producing frames,
+// no permanent error) rather than stalling on a dead context. Confirming the
+// concrete delegate re-init headlessly is machine-dependent (a slow headless GPU
+// downgrades webgl->wasm on recreate, a fast one stays webgl), so the strong
+// end-to-end proof stays owner real-browser; this asserts the survival invariant
+// that holds on any runner. The first test verifies the frozen E3 criterion: the
+// 30/15 fps adaptation.
 
 // `chrome` inside sw.evaluate runs in the service-worker context, not here.
 declare const chrome: {
   storage: { session: { get(keys: string[]): Promise<Record<string, unknown>> } };
 };
+// `BroadcastChannel` inside sw.evaluate is the service-worker global.
+declare const BroadcastChannel: { new (name: string): { postMessage(m: unknown): void; close(): void } };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const extDir = resolve(here, '..');
@@ -61,11 +69,15 @@ const IDLE_AFTER_MS = 8_000;
 const COLLECT_MS = 18_000;
 const WARMUP_TIMEOUT_MS = 60_000;
 
+// Build with VITE_TEST_HOOKS=1 so the worker's context-loss BroadcastChannel
+// hook is present (the second test drives it). The hook is inert until a message
+// arrives, so the 30/15 fps assertion in the first test is unaffected.
 function buildExtension(): void {
   if (existsSync(resolve(extOut, 'manifest.json')) && process.env.PUMP_SKIP_BUILD) return;
   execFileSync('pnpm', ['--filter', '@gesture/extension', 'build'], {
     cwd: resolve(extDir, '../..'),
     stdio: 'inherit',
+    env: { ...process.env, VITE_TEST_HOOKS: '1' },
   });
 }
 
@@ -178,6 +190,84 @@ test('inference fps adapts 30 -> 15 when the hand-idle window elapses', async ()
         `either no downshift, or this runner cannot sustain an active rate over the 15 fps idle target`,
     ).toBeGreaterThanOrEqual(idleMean * 1.2);
     expect(activeMax - idleMean).toBeGreaterThanOrEqual(2);
+  } finally {
+    await context.close();
+  }
+});
+
+// Launch flags shared by both tests (fake camera, the hand-less placeholder y4m).
+const launchArgs = [
+  `--disable-extensions-except=${extOut}`,
+  `--load-extension=${extOut}`,
+  '--use-fake-device-for-media-stream',
+  '--use-fake-ui-for-media-stream',
+  `--use-file-for-fake-video-capture=${y4m}`,
+];
+
+test('pump survives a WEBGL_lose_context on the GL surface (finding 2 recovery)', async () => {
+  buildExtension();
+
+  const context = await chromium.launchPersistentContext('', {
+    channel: 'chromium',
+    headless: true,
+    args: launchArgs,
+  });
+
+  try {
+    const sw = await getServiceWorker(context);
+
+    // Warm-up: wait for the pump to be running (first PumpStat window).
+    const warmupDeadline = Date.now() + WARMUP_TIMEOUT_MS;
+    let running = false;
+    while (Date.now() < warmupDeadline) {
+      const { series, error } = await readSession(sw);
+      expect(error, `pump errored during warm-up: ${error}`).toBeNull();
+      if (series.length > 0) {
+        running = true;
+        break;
+      }
+      await sleep(500);
+    }
+    expect(running, 'pump never started within the warm-up timeout').toBe(true);
+
+    // Let a few windows accumulate so the loss lands on a live, inferring pump.
+    await sleep(4_000);
+    const before = await readSession(sw);
+    expect(before.error, `pump errored before the induced loss: ${before.error}`).toBeNull();
+    const windowsBefore = before.series.length;
+
+    // Drive a real WEBGL_lose_context on MediaPipe's GL surface via the worker's
+    // VITE_TEST_HOOKS BroadcastChannel hook. The SW and the offscreen worker are
+    // the same extension origin, so the channel message reaches the worker.
+    await sw.evaluate(() => {
+      const ch = new BroadcastChannel('gesture-e2e');
+      ch.postMessage('lose-webgl-context');
+      ch.close();
+    });
+
+    // Give the recreate path time to run, then confirm the pump did not stall:
+    // no permanent error, new PumpStat windows kept arriving, and inference
+    // resumed (a recent window reports fps > 0). This is the machine-independent
+    // recovery invariant; the concrete delegate re-init is owner real-browser.
+    await sleep(8_000);
+    const after = await readSession(sw);
+    expect(after.error, `pump reported a permanent error after the loss: ${after.error}`).toBeNull();
+    expect(
+      after.series.length,
+      'no new PumpStat windows after the induced context loss — pump stalled',
+    ).toBeGreaterThan(windowsBefore);
+
+    const recent = after.series.slice(-3);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[recovery] windowsBefore=${windowsBefore} windowsAfter=${after.series.length} ` +
+        `recent(fps)=[${recent.map((s) => s.fps.toFixed(1)).join(', ')}] ` +
+        `delegate=${after.series[after.series.length - 1]?.delegate}`,
+    );
+    expect(
+      recent.some((s) => s.fps > 0),
+      'inference did not resume after the induced context loss',
+    ).toBe(true);
   } finally {
     await context.close();
   }

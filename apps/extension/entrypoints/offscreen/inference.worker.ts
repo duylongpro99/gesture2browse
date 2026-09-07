@@ -1,6 +1,7 @@
 import type { Delegate, GestureFrame } from '@gesture/protocol';
-import { KnnClassifier, MlpClassifier, type MlpWeights, type Classifier } from '@gesture/gesture-core';
+import { KnnClassifier, type Classifier } from '@gesture/gesture-core';
 import { createHandLandmarker, recreateHandLandmarker, reportFrameCostMs, type MediaPipeInit } from './mediapipe';
+import { classifierFromWeights } from './classifier-select';
 import { FpsLogger } from './fps-logger';
 import { createGestureFrameSource } from './gesture-frame';
 import { shouldInfer, DEFAULT_FPS_POLICY_PARAMS, type FpsPolicyState } from './fps-policy';
@@ -50,28 +51,29 @@ ctx.onmessage = (ev: MessageEvent<StartPump>) => {
 // resolved by main.ts (StartPump.weightsUrl). This is the local
 // web-accessible-resource `fetch` explicitly allowed by the offscreen rule
 // (same category as models/hand_landmarker.task) — not the "no network"
-// remote-network boundary. Any failure (network, parse, missing
-// layers/labels) falls back to KnnClassifier and never throws the pump.
+// remote-network boundary. Any failure (network, parse, missing layers/labels,
+// or a featureVersion that doesn't match the runtime feature layout) falls back
+// to KnnClassifier via `classifierFromWeights` and never throws the pump.
 async function loadClassifier(weightsUrl: string): Promise<Classifier> {
   try {
     const res = await fetch(weightsUrl);
     if (!res.ok) return new KnnClassifier();
     const json: unknown = await res.json();
-    if (!isMlpWeights(json)) return new KnnClassifier();
-    return new MlpClassifier(json);
+    return classifierFromWeights(json);
   } catch {
     return new KnnClassifier();
   }
 }
 
-function isMlpWeights(value: unknown): value is MlpWeights {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Record<string, unknown>;
-  return Array.isArray(v.layers) && Array.isArray(v.labels) && typeof v.featureVersion === 'string';
-}
-
 async function run(msg: StartPump): Promise<void> {
-  let { landmarker, delegate } = await createHandLandmarker(msg.wasmBase, msg.modelUrl, msg.preferredDelegate);
+  const init = await createHandLandmarker(msg.wasmBase, msg.modelUrl, msg.preferredDelegate);
+  let landmarker = init.landmarker;
+  let delegate = init.delegate;
+  // The OffscreenCanvas MediaPipe bound its GL context to (null for WASM). The
+  // `webglcontextlost` listener MUST be on this surface, not the worker global
+  // `self`: the event fires on the GL canvas and never reaches `self`, so the
+  // old listener was dead code and the recreate never ran (finding 2).
+  let glCanvas = init.canvas;
   ctx.postMessage({ type: 'ready', delegate } satisfies WorkerMsg);
 
   // A `webglcontextlost` event on the GPU delegate is fatal to the current
@@ -80,21 +82,41 @@ async function run(msg: StartPump): Promise<void> {
   // `contextLost` gates the read loop for the ms it takes to rebuild so we
   // don't hammer `detectForVideo` against a dead GL context.
   let contextLost = false;
-  ctx.addEventListener('webglcontextlost', (ev) => {
-    ev.preventDefault?.();
+  const onContextLost = (ev: Event): void => {
+    (ev as { preventDefault?: () => void }).preventDefault?.();
     if (contextLost) return;
     contextLost = true;
     void recreateHandLandmarker(msg.wasmBase, msg.modelUrl)
       .then((next: MediaPipeInit) => {
         landmarker = next.landmarker;
         delegate = next.delegate;
+        attachContextLostListener(next.canvas);
         contextLost = false;
       })
       .catch((err) => {
         ctx.postMessage({ type: 'error', error: String(err) } satisfies WorkerMsg);
         contextLost = false;
       });
-  });
+  };
+  function attachContextLostListener(canvas: OffscreenCanvas | null): void {
+    glCanvas = canvas;
+    canvas?.addEventListener('webglcontextlost', onContextLost);
+  }
+  attachContextLostListener(glCanvas);
+
+  // Test-only hook: let adaptive-fps.e2e.ts drive a real WEBGL_lose_context on
+  // MediaPipe's GL surface (which we now own) to prove the recovery path.
+  // `VITE_TEST_HOOKS` is never set by `wxt build`, so this whole block is absent
+  // from production output. The service worker (same extension origin) posts on
+  // the channel; getting webgl2 from our canvas returns MediaPipe's own context.
+  if (import.meta.env.VITE_TEST_HOOKS === '1') {
+    const testChannel = new BroadcastChannel('gesture-e2e');
+    testChannel.onmessage = (ev: MessageEvent): void => {
+      if (ev.data !== 'lose-webgl-context') return;
+      const gl = glCanvas?.getContext('webgl2') as WebGL2RenderingContext | null;
+      gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    };
+  }
 
   const canvas = new OffscreenCanvas(1, 1);
   const draw = canvas.getContext('2d');
