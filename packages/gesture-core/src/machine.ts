@@ -129,6 +129,12 @@ export function createGestureMachine() {
     context: { clutchStartTs: null, voteGesture: null, voteFrames: 0 },
     states: {
       Paused: {
+        // Clear the clutch timer on entry, symmetric with Armed. Without this a
+        // pause-while-held leaves a stale clutchStartTs, so clutchElapsed re-fires
+        // on the very next palm frame and re-arms in 1 frame instead of a full
+        // PALM_CLUTCH_MS hold (finding 1). The initial Paused entry is a no-op
+        // (clutchStartTs already null).
+        entry: clearClutch,
         on: {
           FRAME: [
             { guard: 'clutchElapsed', target: 'Armed', actions: [trackVote, 'emitArm'] },
