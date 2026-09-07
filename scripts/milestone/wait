@@ -21,7 +21,7 @@
 #
 # Prints one line the driver acts on, then detail lines:
 #   RESULT=handoff      handoff.md exists with `session: <N>`         → scripts/milestone/status
-#   RESULT=blocked      Claude Code dialog (permission, trust) in the pane → owner answers in the pane, wait again
+#   RESULT=blocked      agent dialog (permission, trust) in the pane          → owner answers in the pane, wait again
 #   RESULT=disconnect   pane idle, no handoff, terminal shows a network/API error → `wait --nudge` once or twice
 #   RESULT=idle         pane idle, no handoff, no error text                → the old "missing" rule: read the pane, ask the owner
 #   RESULT=gone         pane/agent no longer exists                        → spawn afresh with a resume brief
@@ -111,7 +111,7 @@ while :; do
     sleep 2  # let a handoff written in the last tool call land on disk
     have_handoff && finish handoff "handoff: docs/sdd/$m/handoff.md (session $n)"
     case "$st" in
-      blocked) finish blocked "Claude Code dialog in pane $pane: herdr agent read $pane --lines 40; the owner answers it (herdr agent focus $pane), then wait again" ;;
+      blocked) finish blocked "agent dialog (permission/trust) in pane $pane: herdr agent read $pane --lines 40; the owner answers it (herdr agent focus $pane), then wait again" ;;
     esac
     tail=$(herdr agent read "$pane" --lines 60 --format text 2>/dev/null || true)
     if printf '%s' "$tail" | grep -Eiq "$disconnect_re"; then

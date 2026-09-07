@@ -25,6 +25,9 @@
 #   MS_DEFAULT_BASE     base branch when driver.json has none    default: main branch of the repo, else master
 #   MS_CHECK_ALLOW      ERE for the first word of an ## Exit checks command exit-check may run
 #                       default: ^(pnpm|npx|node|turbo|tsc|vitest|playwright|bash|sh|test|\[|scripts/)
+#   MS_AGENT            CLI the worker sessions run: claude | codex        default: claude
+#                       decides the hooks file (.claude/settings.json | .codex/hooks.json),
+#                       the session skill (cc-session | cx-session) and the extra skill links (.agents/skills)
 
 ms_root() { dirname "$(git rev-parse --path-format=absolute --git-common-dir)"; }
 
@@ -36,14 +39,20 @@ ms_load_config() {
   MS_CONTRACT_GLOBS="packages/*/test/contracts/** apps/*/test/contracts/**"
   MS_DEFAULT_BASE=""
   MS_CHECK_ALLOW='^(pnpm|npx|node|turbo|tsc|vitest|playwright|bash|sh|test|\[|scripts/)'
+  MS_AGENT=claude
   # shellcheck disable=SC1091
   [ -f "$root/scripts/milestone/config" ] && . "$root/scripts/milestone/config"
   if [ -z "$MS_DEFAULT_BASE" ]; then
     MS_DEFAULT_BASE=$(git -C "$root" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
     [ -n "$MS_DEFAULT_BASE" ] || MS_DEFAULT_BASE=master
   fi
-  export MS_PANE_PREFIX MS_COMPONENT_ROOTS MS_WHOLE_DIRS MS_CONTRACT_GLOBS MS_DEFAULT_BASE MS_CHECK_ALLOW
+  case "$MS_AGENT" in claude|codex) ;; *) echo "scripts/milestone/config: MS_AGENT must be claude or codex (got '$MS_AGENT')" >&2; return 1 ;; esac
+  export MS_PANE_PREFIX MS_COMPONENT_ROOTS MS_WHOLE_DIRS MS_CONTRACT_GLOBS MS_DEFAULT_BASE MS_CHECK_ALLOW MS_AGENT
 }
+# Agent-specific project paths. ms_hooks_file: where the three hooks are wired;
+# ms_session_skill: the kit skill that starts a worker pane for this agent.
+ms_hooks_file()    { case "${MS_AGENT:-claude}" in codex) echo .codex/hooks.json ;; *) echo .claude/settings.json ;; esac; }
+ms_session_skill() { case "${MS_AGENT:-claude}" in codex) echo cx-session ;; *) echo cc-session ;; esac; }
 
 # ---- docs/STATUS.md ---------------------------------------------------------------
 # A row: `| **<M>** | <owner session> | <state sentence> | `docs/plans/<slug>.md` | <date> |`

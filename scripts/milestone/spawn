@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Spawn one worker Claude Code session inside a milestone worktree, as a Herdr
-# pane, through the cris-managed-session kit script (never re-implemented here).
+# pane, through the cris-managed-session skill (the kit's skills/cc-session, linked
+# into the project; never re-implemented here).
 # Also: archives the previous session's handoff.md as session-<prev>-handoff.md
 # (so a stale one can never be read as this session's) keeping its `next` in
 # driver.json for scripts/milestone/brief, records pane/session/role/base in
@@ -45,9 +46,10 @@ if [ -f "$sdd/handoff.md" ]; then
   "$ds" "$m" set prev_next "${prev_next:-none: previous handoff had no next line}" >/dev/null
 fi
 rm -f "$wt/.claude/stop-blocks"
-[ -f "$root/.claude/settings.local.json" ] && cp "$root/.claude/settings.local.json" "$wt/.claude/settings.local.json"
-n=$(find "$sdd" -maxdepth 1 -name 'session-*-brief.md' | wc -l | tr -d ' ')
 ms_load_config "$root"
+# Claude Code reads its permission allowlist from the worktree; Codex takes approvals from ~/.codex/config.toml.
+[ "$MS_AGENT" = claude ] && [ -f "$root/.claude/settings.local.json" ] && cp "$root/.claude/settings.local.json" "$wt/.claude/settings.local.json"
+n=$(find "$sdd" -maxdepth 1 -name 'session-*-brief.md' | wc -l | tr -d ' ')
 name="$MS_PANE_PREFIX-$m-$role-$n"
 scope=$("$root/scripts/milestone/scope" "$m" "$role" --session "$n" --write)
 out=$(cd "$wt" && "$create" --s-name "$name" --p-name "$name")

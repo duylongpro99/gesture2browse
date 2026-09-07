@@ -61,6 +61,8 @@ deny=(
   ".claude/scope.json"
   ".claude/settings.json"
   ".claude/settings.local.json"
+  ".codex/hooks.json"
+  ".codex/config.toml"
   "scripts/hooks/**"
   "docs/05-roadmap.md"
   "docs/sdd/*/exit-checks.lock"

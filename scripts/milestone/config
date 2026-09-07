@@ -5,3 +5,5 @@ MS_WHOLE_DIRS="fixtures .github"
 MS_CONTRACT_GLOBS="packages/*/test/contracts/** apps/*/test/contracts/**"
 MS_DEFAULT_BASE=master
 MS_CHECK_ALLOW='^(pnpm|npx|node|turbo|tsc|vitest|playwright|bash|sh|test|\[|scripts/)'
+# CLI the worker sessions run: claude | codex
+MS_AGENT=claude

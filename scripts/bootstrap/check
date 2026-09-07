@@ -51,11 +51,12 @@ stage  id                  artifact                                           fi
 3      spike-results       docs/spike-results.md, only when the roadmap has gates (G<n>)   template → agent
 4      scripts             scripts/milestone/*, scripts/hooks/*, scripts/sdd/*, executable   install
 4      config              scripts/milestone/config sources cleanly, no {{…}}   agent
-4      settings            .claude/settings.json wires the three hooks        install / owner merges
+4      settings            hooks file for MS_AGENT (.claude/settings.json | .codex/hooks.json) wires the three hooks   install / owner merges
+4      agents-md           AGENTS.md (MS_AGENT=codex only; templates/AGENTS.md, points Codex at CLAUDE.md and the rule files)   install
 4      gitignore           .gitignore has the milestone-kit block             install
-4      skills              .claude/skills: driving-a-milestone, cris-managed-session, obra-* the briefs name   install
-4      tools               git, jq, gh on PATH; herdr (OWNER when absent)     owner
-4      local-settings      .claude/settings.local.json allowlist              owner
+4      skills              .claude/skills (and .agents/skills for codex): driving-a-milestone, cris-managed-session, obra-* the briefs name   install
+4      tools               git, jq, gh on PATH; the MS_AGENT CLI and herdr (OWNER when absent)   owner
+4      local-settings      .claude/settings.local.json allowlist (claude; NOTE for codex)   owner
 4      tests               scripts/milestone/tests/*.sh pass                  kit
 5      placeholders        no `{{…}}` left in CLAUDE.md, docs/, .claude/rules, scripts/milestone/config   agent
 5      next                scripts/milestone/next --inputs <M> prints READY   parser (BLOCKED (OWNER) items are the owner's)
@@ -189,6 +190,7 @@ else NOTE "spike-results — roadmap has no Gate column; docs/spike-results.md n
 # ---------------------------------------------------------------- stage 4: tooling
 stage "4 — tooling"
 kit=$(sed -n 's/^kit=//p' .milestone-kit 2>/dev/null); [ -n "$kit" ] || kit=$(cd "$here/../.." && pwd)
+[ -d "$kit/scripts" ] || NOTE "kit — .milestone-kit points at $kit, which has no scripts/ (kit moved?); re-run install from its new location to restamp and refresh the skill links"
 bad=""
 for f in claim spawn brief wait status exit-check scope log-decision next driver-state lib.sh; do [ -x "scripts/milestone/$f" ] || bad="$bad scripts/milestone/$f"; done
 for f in guard-scope.sh require-handoff.sh guard-superpowers-paths.sh; do [ -x "scripts/hooks/$f" ] || bad="$bad scripts/hooks/$f"; done
@@ -202,23 +204,34 @@ fi
 if [ -f scripts/milestone/config ]; then
   if (set -e; . scripts/milestone/config) 2>/dev/null; then OK "config — scripts/milestone/config sources cleanly"; else MAL "config — scripts/milestone/config does not source (KEY=value lines only)"; fi
 else MISS "config — scripts/milestone/config (templates/milestone.config)"; fi
-if need_file .claude/settings.json settings; then
-  bad=""; for h in guard-scope.sh require-handoff.sh guard-superpowers-paths.sh; do grep -q "$h" .claude/settings.json || bad="$bad $h"; done
-  [ -z "$bad" ] && OK "settings — .claude/settings.json wires the three hooks" || MAL "settings — .claude/settings.json lacks hook(s):$bad (driver preconditions 6, 7)"
+ms_load_config "$proj" 2>/dev/null || { MAL "config — MS_AGENT in scripts/milestone/config must be claude or codex"; MS_AGENT=claude; }
+hooks=$(ms_hooks_file); skill_dirs=.claude/skills; [ "$MS_AGENT" = codex ] && skill_dirs=".claude/skills .agents/skills"
+if need_file "$hooks" settings; then
+  bad=""; for h in guard-scope.sh require-handoff.sh guard-superpowers-paths.sh; do grep -q "$h" "$hooks" || bad="$bad $h"; done
+  [ -z "$bad" ] && OK "settings — $hooks wires the three hooks (MS_AGENT=$MS_AGENT)" || MAL "settings — $hooks lacks hook(s):$bad (driver preconditions 6, 7)"
+fi
+if [ "$MS_AGENT" = codex ]; then
+  need_file AGENTS.md agents-md && OK "agents-md — AGENTS.md present (Codex reads it; it points at CLAUDE.md and .claude/rules)"
 fi
 if [ -f .gitignore ] && grep -q '^# ---- milestone-kit' .gitignore && grep -q '^\.worktrees/' .gitignore && grep -q 'docs/sdd/\*/handoff.md' .gitignore; then OK "gitignore — milestone-kit block present"
 else MISS "gitignore — the milestone-kit block (templates/gitignore.block; install appends it)"; fi
 bad=""
-for s in driving-a-milestone cris-managed-session obra-brainstorming obra-writing-plans obra-subagent-driven-development obra-executing-plans obra-test-driven-development obra-verification-before-completion obra-finishing-a-development-branch obra-using-git-worktrees; do
-  [ -f ".claude/skills/$s/SKILL.md" ] || bad="$bad $s"
+for d in $skill_dirs; do
+  for s in driving-a-milestone cris-managed-session obra-brainstorming obra-writing-plans obra-subagent-driven-development obra-executing-plans obra-test-driven-development obra-verification-before-completion obra-finishing-a-development-branch obra-using-git-worktrees; do
+    [ -f "$d/$s/SKILL.md" ] || bad="$bad $d/$s"
+  done
 done
 [ -x .claude/skills/cris-managed-session/scripts/create-session.sh ] || bad="$bad cris-managed-session/scripts/create-session.sh"
-[ -z "$bad" ] && OK "skills — driving-a-milestone, cris-managed-session, obra-* linked" || MISS "skills — .claude/skills lacks:$bad"
+want_session=$(ms_session_skill); have_session=$(sed -n 's/^name:[[:space:]]*//p' .claude/skills/cris-managed-session/SKILL.md 2>/dev/null | head -1)
+[ -z "$have_session" ] || [ "$have_session" = "$want_session" ] || bad="$bad cris-managed-session->$have_session(want $want_session for MS_AGENT=$MS_AGENT; re-run install --agent $MS_AGENT)"
+[ -z "$bad" ] && OK "skills — driving-a-milestone, cris-managed-session ($want_session), obra-* linked in $skill_dirs" || MISS "skills — lacks:$bad"
 [ -d .claude/skills/driving-a-milestone ] && [ ! -L .claude/skills/driving-a-milestone ] && NOTE "skills — driving-a-milestone is a real directory, not a link into the kit; edits there do not reach other projects"
 bad=""; for t in git jq gh; do command -v "$t" >/dev/null 2>&1 || bad="$bad $t"; done
 [ -z "$bad" ] && OK "tools — git jq gh on PATH" || MISS "tools — not on PATH:$bad"
+command -v "$MS_AGENT" >/dev/null 2>&1 && OK "tools — $MS_AGENT on PATH (MS_AGENT)" || OWN "tools — $MS_AGENT not on PATH; the worker sessions run it (MS_AGENT=$MS_AGENT)"
 command -v herdr >/dev/null 2>&1 && OK "tools — herdr on PATH (HERDR_ENV=${HERDR_ENV:-unset} here; the driver needs 1)" || OWN "tools — herdr not on PATH; the driver runs inside Herdr (precondition 1)"
-[ -f .claude/settings.local.json ] && OK "local-settings — .claude/settings.local.json present" || OWN "local-settings — .claude/settings.local.json missing: copy .claude/settings.local.json.example and edit the allowlist, or every worker commit is a permission dialog (precondition 5)"
+if [ "$MS_AGENT" = codex ]; then NOTE "local-settings — not used with MS_AGENT=codex; approvals come from ~/.codex/config.toml and each worktree path is trusted once in the pane (precondition 5)"
+else [ -f .claude/settings.local.json ] && OK "local-settings — .claude/settings.local.json present" || OWN "local-settings — .claude/settings.local.json missing: copy .claude/settings.local.json.example and edit the allowlist, or every worker commit is a permission dialog (precondition 5)"; fi
 if [ $tests = 1 ] && [ -d scripts/milestone/tests ]; then
   for t in scripts/milestone/tests/*.sh; do
     out=$(bash "$t" 2>&1); rc=$?

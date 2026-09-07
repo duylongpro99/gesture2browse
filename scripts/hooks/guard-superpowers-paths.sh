@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Claude Code hook. Keeps superpowers artifacts inside docs/ (CLAUDE.md §6,
-# docs/plans/README.md §Superpowers).
+# Claude Code / Codex hook. Keeps superpowers artifacts inside docs/ (CLAUDE.md §6,
+# docs/plans/README.md §Superpowers). On Codex the file-edit tool is apply_patch and
+# its tool_input.command is the patch text; the same regexes catch paths in it.
 #
 # PreToolUse (Write|Edit|Bash): deny any tool call that targets .superpowers/
 # or docs/superpowers/, or that runs the plugin's own sdd scripts instead of

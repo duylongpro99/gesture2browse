@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Claude Code Stop hook: a driving-a-milestone worker may not end its turn
-# without a handoff for its session.
+# Claude Code / Codex Stop hook: a driving-a-milestone worker may not end its
+# turn without a handoff for its session.
 #
 # Enabled by .claude/scope.json (written by scripts/milestone/spawn, gitignored),
 # like guard-scope.sh; a no-op everywhere else. When the file names a session N
 # and docs/sdd/<M>/handoff.md is missing or says another session, the hook
-# blocks the stop (exit 2) with the reason on stderr, which Claude Code feeds
-# back to the worker as its next instruction. This is what turns a turn that
+# blocks the stop with `{"decision":"block","reason":…}` on stdout (the form
+# both Claude Code and Codex accept), which the agent feeds back to the worker
+# as its next instruction. This is what turns a turn that
 # was cut by a lost connection into "continue and hand off" once the network is
 # back, instead of a pane sitting idle until the owner types something.
 #
@@ -36,9 +37,11 @@ if [ "$count" -ge "$max" ]; then
   exit 0
 fi
 echo $((count + 1)) > "$counter"
-cat >&2 <<EOF
+reason=$(cat <<EOF
 You are the driving-a-milestone worker for milestone $m, session $n, and you are about to stop, but $why.
 If your previous turn was interrupted (connection lost), re-read docs/sdd/$m/session-$n-brief.md, check \`git status\` and the SDD ledger progress.md for what is already done, and continue from there.
 Before you stop: commit your work (explicit paths, one task per commit), then write docs/sdd/$m/handoff.md in the exact format the brief gives, with \`session: $n\` and an \`outcome:\` line. If you are truly stuck, hand off \`outcome: BLOCKED\` with the reason in \`summary\`.
 EOF
-exit 2
+)
+jq -n --arg r "$reason" '{decision:"block",reason:$r}'
+exit 0

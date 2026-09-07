@@ -129,6 +129,32 @@ n=$((n + 1)); r=$(jq -n --arg f "$proj/docs/plans/other.md" --arg cwd "$proj" '{
 if printf '%s' "$r" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null; then echo "ok $n - hook JSON: Write deny"; else echo "not ok $n - hook JSON: Write deny"; fail=1; echo "    | $r"; fi
 n=$((n + 1)); r=$(jq -n --arg f "$proj/docs/sdd/0X/handoff.md" --arg cwd "$proj" '{hook_event_name:"PreToolUse",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$f}}' | "$hook")
 if [ -z "$r" ]; then echo "ok $n - hook JSON: Write allow"; else echo "not ok $n - hook JSON: Write allow"; fail=1; echo "    | $r"; fi
+# Codex: apply_patch carries the patch in tool_input.command; every touched path must be in scope.
+patch_deny=$'*** Begin Patch\n*** Update File: apps/playground/src/a.ts\n@@\n-x\n+y\n*** Add File: docs/plans/other.md\n+z\n*** End Patch'
+n=$((n + 1)); r=$(jq -n --arg c "$patch_deny" --arg cwd "$proj" '{hook_event_name:"PreToolUse",tool_name:"apply_patch",cwd:$cwd,tool_input:{command:$c}}' | "$hook")
+if printf '%s' "$r" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null && printf '%s' "$r" | grep -q 'apply_patch to docs/plans/other.md'; then echo "ok $n - hook JSON: apply_patch deny (second file out of scope)"; else echo "not ok $n - hook JSON: apply_patch deny"; fail=1; echo "    | $r"; fi
+patch_ok=$'*** Begin Patch\n*** Add File: apps/playground/src/new.ts\n+export const x = 1;\n*** Delete File: fixtures/dispatch/old.html\n*** Update File: docs/sdd/0X/progress.md\n*** Move to: docs/sdd/0X/progress-2.md\n@@\n-a\n+b\n*** End Patch'
+n=$((n + 1)); r=$(jq -n --arg c "$patch_ok" --arg cwd "$proj" '{hook_event_name:"PreToolUse",tool_name:"apply_patch",cwd:$cwd,tool_input:{command:$c}}' | "$hook")
+if [ -z "$r" ]; then echo "ok $n - hook JSON: apply_patch allow (add, delete, update, move in scope)"; else echo "not ok $n - hook JSON: apply_patch allow"; fail=1; echo "    | $r"; fi
+patch_prot=$'*** Begin Patch\n*** Update File: .codex/hooks.json\n@@\n-a\n+b\n*** End Patch'
+n=$((n + 1)); r=$(jq -n --arg c "$patch_prot" --arg cwd "$proj" '{hook_event_name:"PreToolUse",tool_name:"apply_patch",cwd:$cwd,tool_input:{command:$c}}' | "$hook")
+if printf '%s' "$r" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null; then echo "ok $n - hook JSON: apply_patch deny .codex/hooks.json (not in allow)"; else echo "not ok $n - hook JSON: apply_patch deny .codex/hooks.json"; fail=1; echo "    | $r"; fi
+deny 'protected literal .codex/hooks.json' 'echo x >> .codex/hooks.json' 'protected file'
+# Codex PostToolUse after apply_patch: out-of-scope leftovers block like after Bash.
+n=$((n + 1)); ( cd "$proj" && git init -q . && git add -A && git -c user.email=t@t -c user.name=t commit -qm init ) 2>/dev/null; printf 'x' > "$proj/docs/plans/leak.md"
+r=$(jq -n --arg cwd "$proj" '{hook_event_name:"PostToolUse",tool_name:"apply_patch",cwd:$cwd,tool_input:{command:"*** Begin Patch\n*** End Patch"}}' | "$hook"); rm -f "$proj/docs/plans/leak.md"
+if printf '%s' "$r" | jq -e '.decision == "block"' >/dev/null && printf '%s' "$r" | grep -q 'docs/plans/leak.md'; then echo "ok $n - hook JSON: PostToolUse apply_patch blocks on out-of-scope leftovers"; else echo "not ok $n - hook JSON: PostToolUse apply_patch block"; fail=1; echo "    | $r"; fi
+# Stop hook (require-handoff.sh): JSON block decision, same shape for Claude Code and Codex.
+rh=$(dirname "$hook")/require-handoff.sh
+python3 - "$proj/.claude/scope.json" <<'PY2'
+import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["session"]=1; json.dump(d,open(p,"w"))
+PY2
+n=$((n + 1)); r=$(cd "$proj" && printf '{"hook_event_name":"Stop"}' | "$rh")
+if printf '%s' "$r" | jq -e '.decision == "block"' >/dev/null && printf '%s' "$r" | grep -q "session: 1' does not exist"; then echo "ok $n - require-handoff: blocks with JSON when handoff.md missing"; else echo "not ok $n - require-handoff: JSON block"; fail=1; echo "    | $r"; fi
+printf 'session: 1\noutcome: DONE\n' > "$proj/docs/sdd/0X/handoff.md"
+n=$((n + 1)); r=$(cd "$proj" && printf '{"hook_event_name":"Stop"}' | "$rh")
+if [ -z "$r" ]; then echo "ok $n - require-handoff: silent when handoff.md matches session"; else echo "not ok $n - require-handoff: silent"; fail=1; echo "    | $r"; fi
+
 n=$((n + 1)); r=$("$hook" --classify docs/sdd/0X/handoff.md docs/05-roadmap.md "$proj/fixtures/x" /etc/hosts)
 if [ "$r" = "ok docs/sdd/0X/handoff.md
 deny docs/05-roadmap.md

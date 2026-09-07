@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Claude Code hook: keep a driving-a-milestone worker inside its role's paths.
+# Claude Code / Codex hook: keep a driving-a-milestone worker inside its role's paths.
+# Same script for both agents: Claude Code wires it in .claude/settings.json, Codex
+# in .codex/hooks.json (templates/codex/hooks.json). Both send the same stdin JSON
+# (hook_event_name, tool_name, tool_input, cwd) and accept the same deny JSON.
 #
 # Enabled by the presence of .claude/scope.json in the project root; the file is
 # written by scripts/milestone/spawn (see scripts/milestone/scope for its
 # shape) and is gitignored. Without it this hook is a no-op, so owner sessions
 # in the root checkout are unaffected. With it:
 #
-# PreToolUse (Write|Edit|MultiEdit|NotebookEdit|Bash)
+# PreToolUse (Write|Edit|MultiEdit|NotebookEdit|Bash|apply_patch)
 #   - Write/Edit/NotebookEdit: the target path must match an `allow` glob and
 #     no `deny` glob; anything outside the project is denied except the
 #     system temp dirs (finish clones into $TMPDIR).
@@ -24,7 +27,10 @@
 #     A `>` inside a quoted string (commit message, grep pattern, `node -e`
 #     source) is text, not a redirect. Anything else (pnpm, tsc, vitest, node,
 #     gh, git commit) runs, and PostToolUse checks what it left behind.
-# PostToolUse (Bash|Write|Edit|MultiEdit|NotebookEdit)
+#   - apply_patch (Codex file edits): every `*** Add File:` / `*** Update File:` /
+#     `*** Delete File:` / `*** Move to:` path in the patch (tool_input.command)
+#     must be in scope.
+# PostToolUse (Bash|Write|Edit|MultiEdit|NotebookEdit|apply_patch)
 #   - if `git status --porcelain` shows a tracked or untracked path outside the
 #     scope, block with the list, so a build tool or script that wrote out of
 #     scope is reverted before the worker continues.
@@ -35,8 +41,9 @@
 # reason (empty = allowed) without needing hook JSON; the tests use it.
 #
 # The denial text tells the worker the only sanctioned way out: hand off
-# NEEDS-OWNER with the path and the reason. The scope file, settings, and the
-# hooks directory are always denied so a worker cannot widen its own scope.
+# NEEDS-OWNER with the path and the reason. The scope file, the agents' hook
+# settings (.claude/settings*.json, .codex/hooks.json, .codex/config.toml) and
+# the hooks directory are always denied so a worker cannot widen its own scope.
 set -u
 set -f  # never glob-expand tokens taken from a command line
 
@@ -136,7 +143,7 @@ classify() {
 
 deny_pre() {
   local why=$1
-  local msg="Out of scope for milestone $milestone role $role: $why. Your writes are limited to the globs in .claude/scope.json (driving-a-milestone). Do not work around this and never edit .claude/scope.json, .claude/settings*.json or scripts/hooks/. If the task truly needs this path, stop and hand off outcome: NEEDS-OWNER with the path and the reason in owner-questions."
+  local msg="Out of scope for milestone $milestone role $role: $why. Your writes are limited to the globs in .claude/scope.json (driving-a-milestone). Do not work around this and never edit .claude/scope.json, .claude/settings*.json, .codex/hooks.json or scripts/hooks/. If the task truly needs this path, stop and hand off outcome: NEEDS-OWNER with the path and the reason in owner-questions."
   jq -n --arg r "$msg" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
   exit 0
 }
@@ -290,8 +297,8 @@ check_bash() { # $1 = command, $2 = cwd; prints the first denial reason, or noth
      && ! printf '%s' "$cmd" | grep -Eq -- '-(delete|exec|execdir|ok|fprint|fls)'; then return 0; fi
   lexed=$(printf '%s\n' "$cmd" | lex)
   # Protected literals anywhere in a non-read-only command (heredoc bodies excluded).
-  if printf '%s' "$lexed" | tr "$US$RT" '  ' | grep -Eq '\.claude/(scope\.json|settings[^ ]*\.json)|scripts/hooks/|(^|[ /])\.git/'; then
-    echo "the command names a protected file (.claude/scope.json, .claude/settings*.json, scripts/hooks/, .git/)"; return 0
+  if printf '%s' "$lexed" | tr "$US$RT" '  ' | grep -Eq '\.claude/(scope\.json|settings[^ ]*\.json)|\.codex/(hooks\.json|config\.toml)|scripts/hooks/|(^|[ /])\.git/'; then
+    echo "the command names a protected file (.claude/scope.json, .claude/settings*.json, .codex/hooks.json, .codex/config.toml, scripts/hooks/, .git/)"; return 0
   fi
   local simple first sub tok t gcwd cur=$cwd stack=() args=() toks=()
   printf '%s\n' "$lexed" | while IFS= read -r simple; do
@@ -408,12 +415,22 @@ if [ "$event" = "PreToolUse" ]; then
       why=$(check_bash "$command" "$cwd")
       [ -z "$why" ] || deny_pre "$why"
       exit 0 ;;
+    apply_patch)
+      # Codex file edits: one patch, possibly several files. Deny on the first path out of scope.
+      patch=$(printf '%s' "$input" | jq -r '.tool_input.command // .tool_input.patch // .tool_input.input // empty')
+      [ -n "$patch" ] || exit 0
+      while IFS= read -r p; do
+        p=${p%"${p##*[! ]}"}
+        [ -n "$p" ] || continue
+        [ "$(classify "$p" "$cwd")" = ok ] || deny_pre "apply_patch to $p"
+      done < <(printf '%s\n' "$patch" | sed -n -E 's/^\*\*\* (Add File|Update File|Delete File|Move to): (.*)$/\2/p')
+      exit 0 ;;
   esac
   exit 0
 fi
 
 if [ "$event" = "PostToolUse" ]; then
-  case "$tool" in Bash|Write|Edit|MultiEdit|NotebookEdit) ;; *) exit 0 ;; esac
+  case "$tool" in Bash|Write|Edit|MultiEdit|NotebookEdit|apply_patch) ;; *) exit 0 ;; esac
   bad=""
   while IFS= read -r line; do
     [ -n "$line" ] || continue
