@@ -29,6 +29,19 @@ describe('toFrameInput', () => {
       gesture: 'Open_Palm',
       score: 0.9,
       velocity: { vx: 1, vy: -2 },
+      palmFacing: undefined,
+    });
+  });
+
+  it('forwards palmFacing so the Task-4 palm-facing gate is active in production', () => {
+    const gf = frame({ ts: 123, gesture: 'Open_Palm', score: 0.9, palmFacing: false });
+    expect(toFrameInput(gf)).toEqual({
+      ts: 123,
+      present: true,
+      gesture: 'Open_Palm',
+      score: 0.9,
+      velocity: { vx: 0, vy: 0 },
+      palmFacing: false,
     });
   });
 });
