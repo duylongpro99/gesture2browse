@@ -6,5 +6,5 @@ export { MlpClassifier, type MlpWeights, type MlpLayer, forward } from './mlp.js
 export { palmFacing } from './palm-facing.js';
 export { createLandmarkFilter, type LandmarkFilter } from './landmark-filter.js';
 export { createGestureMachine, type FrameInput } from './machine.js';
-export { replayFixture, replayFrames, createGestureRunner, type GestureRunner } from './replay.js';
-export { PALM_CLUTCH_MS, SCROLL_STEP, MIN_CONFIDENCE, SCROLL_PX_PER_UNIT } from './constants.js';
+export { replayFixture, replayFixtureWith, replayFrames, createGestureRunner, type GestureRunner } from './replay.js';
+export { PALM_CLUTCH_MS, SCROLL_STEP, MIN_CONFIDENCE, SCROLL_PX_PER_UNIT, VOTE_FRAMES } from './constants.js';
