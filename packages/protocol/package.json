@@ -2,13 +2,24 @@
   "name": "@gesture/protocol",
   "version": "0.0.0",
   "type": "module",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts",
+    "build": "tsup && tsc -p tsconfig.json --emitDeclarationOnly --outDir dist --rootDir src",
     "test": "vitest run --passWithNoTests",
-    "lint": "eslint src",
+    "lint": "biome lint ./src",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
-  "dependencies": { "zod": "^4.0.0" },
-  "devDependencies": { "tsup": "^8.3.0", "vitest": "^2.1.0", "typescript": "^5.6.0" }
+  "dependencies": {
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "vitest": "^5.0.0",
+    "typescript": "^7.0.2"
+  }
 }

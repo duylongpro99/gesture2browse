@@ -8,19 +8,18 @@
     "test": "turbo run test",
     "lint": "turbo run lint && node scripts/lint/boundary-lint.mjs",
     "lint:boundary": "node scripts/lint/boundary-lint.mjs",
+    "format": "biome format --write .",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
     "@gesture/gesture-core": "workspace:*",
     "@gesture/protocol": "workspace:*",
-    "turbo": "^2.1.0",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
-    "happy-dom": "^15.0.0",
-    "@playwright/test": "^1.47.0",
-    "eslint": "^9.10.0",
-    "typescript-eslint": "^8.6.0",
-    "prettier": "^3.3.0",
-    "tsup": "^8.3.0"
+    "turbo": "^2.10.12",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0",
+    "happy-dom": "^20.14.0",
+    "@playwright/test": "^1.63.0",
+    "@biomejs/biome": "^2.5.12",
+    "tsup": "^8.5.1"
   }
 }

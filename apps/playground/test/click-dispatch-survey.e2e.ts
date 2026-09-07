@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
-import { type AddressInfo } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
