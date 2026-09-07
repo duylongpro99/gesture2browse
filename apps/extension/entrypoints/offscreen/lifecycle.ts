@@ -42,7 +42,7 @@ export function shouldRestart(
   if (last !== undefined && now - last < params.minIntervalMs) return false;
 
   const windowStart = now - params.windowMs;
-  const countInWindow = state.restartTimes.filter((t) => t > windowStart && t <= now).length;
+  const countInWindow = state.restartTimes.filter((t) => t > windowStart).length;
   return countInWindow < params.maxRestartsPerWindow;
 }
 
