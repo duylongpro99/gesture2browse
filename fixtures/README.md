@@ -27,6 +27,16 @@ Camera-free test inputs. Two kinds:
 
 - `gestures/placeholder.json` — synthetic right-hand closed fist translating
   downward, 30 frames @ 30 fps. Enough to parse and replay; not a real recording.
+- `models/gesture-mlp.json` — the trained MLP classifier weights shipped in the
+  extension and consumed by `MlpClassifier` (1B). Serialized `MlpWeights`: layer
+  shapes + weight/bias arrays, the label order (the frozen `GestureLabel`
+  vocabulary), and a `featureVersion` tag for the normalize feature set. Copied
+  into the build under `/models/gesture-mlp.json` by the extension's
+  `build:publicAssets` hook, alongside `hand_landmarker.task`, and resolved from
+  the extension origin at runtime. On a clean checkout (only `placeholder.json`)
+  this is a **degenerate single-class model** — the golden replay suite locks it,
+  but Exit E1 (precision/recall ≥ 95 %) is owner-deferred until real recordings
+  land (see `docs/plans/1B.spec.md §3`).
 - `bench/placeholder.y4m` — 64×64, 10-frame, mid-gray I420 clip. A valid video
   the fake camera can play; contains no hand (the bench exit criterion is a
   well-formed CSV, not detections).
@@ -40,7 +50,15 @@ TypeScript support (the repo requires Node ≥ 24):
 node scripts/fixtures/generate-placeholder-y4m.ts       # -> bench/placeholder.y4m
 node scripts/fixtures/generate-placeholder-fixture.ts   # -> gestures/placeholder.json
 node scripts/fixtures/play.ts gestures/placeholder.json # replay -> prints Intents
+node scripts/train/train-gesture-mlp.ts                 # -> models/gesture-mlp.json (+ P/R table)
 ```
+
+`train-gesture-mlp.ts` reads every `gestures/**.json`, trains held-out by
+`subjectId`, and writes `models/gesture-mlp.json` deterministically (seeded RNG),
+so re-running it reproduces the committed artifact byte-for-byte until the
+fixtures change. It imports `@gesture/protocol` and `@gesture/gesture-core` by
+name, so those packages must be built (`pnpm build`) and resolvable from the repo
+root.
 
 `generate-placeholder-fixture.ts` and `play.ts` import the `@gesture/protocol` and
 `@gesture/gesture-core` workspace packages by name, so they need those packages

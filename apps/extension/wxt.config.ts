@@ -26,6 +26,10 @@ const require = createRequire(import.meta.url);
 // the output under /models and /wasm; only public/models/.gitkeep is committed.
 const repoRoot = resolve(here, '../..');
 const modelSrc = resolve(repoRoot, 'hand_landmarker.task');
+// Trained gesture-classifier weights (1B): numeric JSON committed under fixtures/,
+// copied next to the hand-landmark model and resolved by the offscreen document
+// from the extension origin exactly like hand_landmarker.task (arch §3.1).
+const gestureModelSrc = resolve(repoRoot, 'fixtures/models/gesture-mlp.json');
 const wasmDir = join(dirname(require.resolve('@mediapipe/tasks-vision')), 'wasm');
 
 export default defineConfig({
@@ -48,6 +52,7 @@ export default defineConfig({
   hooks: {
     'build:publicAssets'(_wxt, files) {
       files.push({ absoluteSrc: modelSrc, relativeDest: 'models/hand_landmarker.task' });
+      files.push({ absoluteSrc: gestureModelSrc, relativeDest: 'models/gesture-mlp.json' });
       for (const name of readdirSync(wasmDir)) {
         files.push({ absoluteSrc: join(wasmDir, name), relativeDest: `wasm/${name}` });
       }
