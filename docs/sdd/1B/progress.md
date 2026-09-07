@@ -14,7 +14,10 @@ Owner decisions 2026-09-07 (all option a, `docs/sdd/1B/driver.json`): browser-in
 | 4 | gesture-core | FSM vote + palm-facing gate; golden replay suite (E2) | complete |
 | 5 | offscreen | worker robustness + wire the trained classifier | complete |
 | 6 | offscreen | lifecycle: restart on stream end | complete |
-| 7 | extension | adaptive-fps + context-loss e2e (E3) | not started |
+| 7 | extension | adaptive-fps + context-loss e2e (E3) | complete |
+| 8 | gesture-core | finding 1: Paused clutch re-arm asymmetry (entry: clearClutch) | not started |
+| 9 | offscreen | findings 2+3+4: real-surface webglcontextlost recovery + warm-up delegate + featureVersion validation | not started |
+| 10 | extension | frame-pump 0B G1 gate idle-aware (owner-authorized cross-milestone) | not started |
 
 ## Dependency order
 
