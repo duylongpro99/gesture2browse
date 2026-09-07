@@ -13,5 +13,6 @@ export const GestureFrameSchema = z.object({
   scale: z.number(),
   pointer: z.object({ x: z.number(), y: z.number() }),
   landmarks: z.array(z.number()).length(63).optional(),
+  palmFacing: z.boolean().optional(), // perception→FSM/diagnostics, absent = ungated
 });
 export type GestureFrame = z.infer<typeof GestureFrameSchema>;

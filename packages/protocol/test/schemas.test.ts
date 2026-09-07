@@ -41,6 +41,47 @@ describe('GestureFrame v0', () => {
       }),
     ).toThrow();
   });
+  it('parses a frame with palmFacing: true', () => {
+    const f = {
+      ts: 1,
+      present: true,
+      score: 0.9,
+      pinch: 0.2,
+      fingers: [true, false, false, false, false],
+      velocity: { vx: 0, vy: 0 },
+      scale: 0.3,
+      pointer: { x: 0.5, y: 0.5 },
+      palmFacing: true,
+    };
+    expect(GestureFrameSchema.parse(f).palmFacing).toBe(true);
+  });
+  it('parses a frame with palmFacing: false', () => {
+    const f = {
+      ts: 1,
+      present: true,
+      score: 0.9,
+      pinch: 0.2,
+      fingers: [true, false, false, false, false],
+      velocity: { vx: 0, vy: 0 },
+      scale: 0.3,
+      pointer: { x: 0.5, y: 0.5 },
+      palmFacing: false,
+    };
+    expect(GestureFrameSchema.parse(f).palmFacing).toBe(false);
+  });
+  it('parses a frame without palmFacing, leaving it undefined', () => {
+    const f = {
+      ts: 1,
+      present: true,
+      score: 0.9,
+      pinch: 0.2,
+      fingers: [true, false, false, false, false],
+      velocity: { vx: 0, vy: 0 },
+      scale: 0.3,
+      pointer: { x: 0.5, y: 0.5 },
+    };
+    expect(GestureFrameSchema.parse(f).palmFacing).toBeUndefined();
+  });
 });
 
 describe('FixtureRecord', () => {
