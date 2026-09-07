@@ -17,6 +17,6 @@ _Project section last updated: 2026-09-05 (driver, on the owner's instruction)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 1B | drv-1B | Execute session 2 done: Tasks 3–4 on branch (offline MLP trainer + shipped weights artifact; FSM 3-frame vote + palm-facing gate + golden replay suite). E2 PASS; Tasks 5–7 remain; E3 FAIL until Task 7; E1 owner-deferred (MOCK G4). | `docs/plans/1B.md` | 2026-09-07 |
+| 1B | drv-1B | Execute session 3 done: Tasks 5–6 on branch (offscreen worker robustness + wired trained MLP/landmark-filter/palmFacing into GestureFrame + FSM forwarding; restart-on-stream-end with storm guard + self-recovery). E2 PASS; Task 7 remains; E3 FAIL until Task 7; E1 owner-deferred (MOCK G4). | `docs/plans/1B.md` | 2026-09-07 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
