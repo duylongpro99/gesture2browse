@@ -29,7 +29,8 @@ export type WorkerMsg =
   | { type: 'ready'; delegate: Delegate }
   | { type: 'error'; error: string }
   | { type: 'stat'; ts: number; fps: number; frames: number; windowMs: number; delegate: Delegate }
-  | { type: 'frame'; frame: GestureFrame };
+  | { type: 'frame'; frame: GestureFrame }
+  | { type: 'streamEnded' };
 
 // Minimal worker-scope shape (avoids pulling the webworker lib program-wide,
 // which would collide with the MediaStreamTrackProcessor declaration in main.ts).
@@ -114,7 +115,10 @@ async function run(msg: StartPump): Promise<void> {
 
   for (;;) {
     const { value: frame, done } = await reader.read();
-    if (done) break;
+    if (done) {
+      ctx.postMessage({ type: 'streamEnded' } satisfies WorkerMsg);
+      break;
+    }
     if (!frame) continue;
     if (!sized) {
       canvas.width = frame.displayWidth;

@@ -4,6 +4,7 @@ import type { PumpStat, GestureFrame } from '@gesture/protocol';
 import { PortName } from '@gesture/protocol';
 import InferenceWorker from './inference.worker?worker';
 import type { StartPump, WorkerMsg } from './inference.worker';
+import { shouldRestart, recordRestart, type RestartState } from './lifecycle';
 
 // Offscreen document — owner of the camera and the G1 frame pump. It opens the
 // camera, wires getUserMedia -> MediaStreamTrackProcessor -> a transferred
@@ -39,6 +40,24 @@ const WEIGHTS_URL = new URL('models/gesture-mlp.json', origin).href;
 // §3.1/§3.2). Opened once at document load, independent of pump start/stop.
 const swPort = browser.runtime.connect({ name: PortName.OffscreenToServiceWorker });
 
+// The currently-running worker/stream/track, held here so the restart path
+// (below) can tear them down before re-acquiring the camera. Set once
+// startPump's async setup completes; null while no pump is running.
+interface PumpHandle {
+  worker: Worker;
+  stream: MediaStream;
+  track: MediaStreamTrack;
+  /** Guards against the worker's `streamEnded` message and the track's
+   * `ended` event both firing a restart for the same stream end. */
+  restarted: boolean;
+}
+let current: PumpHandle | null = null;
+
+// Restart-storm guard state (Task 6): shared across the lifetime of the
+// document so a camera that keeps ending immediately does not spin-loop
+// getUserMedia. Lifecycle concern, not gesture timing (CLAUDE.md §2).
+const restartState: RestartState = { restartTimes: [] };
+
 async function startPump(): Promise<void> {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { width: 640, height: 480 },
@@ -51,6 +70,9 @@ async function startPump(): Promise<void> {
   const readable = processor.readable;
 
   const worker = new InferenceWorker();
+  const handle: PumpHandle = { worker, stream, track, restarted: false };
+  current = handle;
+
   worker.onmessage = (ev: MessageEvent<WorkerMsg>) => {
     const m = ev.data;
     if (m.type === 'stat') {
@@ -67,8 +89,12 @@ async function startPump(): Promise<void> {
       void browser.runtime.sendMessage({ type: 'PumpError', error: m.error });
     } else if (m.type === 'frame') {
       swPort.postMessage(m.frame);
+    } else if (m.type === 'streamEnded') {
+      handleStreamEnd(handle);
     }
   };
+
+  track.addEventListener('ended', () => handleStreamEnd(handle));
 
   const start: StartPump = {
     type: 'start',
@@ -80,6 +106,36 @@ async function startPump(): Promise<void> {
     preferredDelegate: 'webgl',
   };
   worker.postMessage(start, [readable]);
+}
+
+// Triggered by either the worker's `{type:'streamEnded'}` message (reader
+// loop saw `done`) or the video track's `ended` event — both can fire for
+// the same stream end, so `handle.restarted` dedupes them. Tears down the
+// old worker/track and re-runs startPump, which re-acquires getUserMedia and
+// so re-triggers the SW camera pre-check (spec §6), unless the restart-storm
+// guard refuses (a camera that keeps ending immediately must not spin-loop).
+function handleStreamEnd(handle: PumpHandle): void {
+  if (handle.restarted) return;
+  handle.restarted = true;
+
+  const now = performance.now();
+  if (!shouldRestart(restartState, now)) {
+    void browser.runtime.sendMessage({
+      type: 'PumpError',
+      error: 'camera stream ended repeatedly; restart guard refused (restart storm)',
+    });
+    return;
+  }
+  recordRestart(restartState, now);
+
+  handle.worker.terminate();
+  handle.track.stop();
+  for (const t of handle.stream.getTracks()) t.stop();
+  if (current === handle) current = null;
+
+  void startPump().catch((err) => {
+    void browser.runtime.sendMessage({ type: 'PumpError', error: String(err) });
+  });
 }
 
 void startPump().catch((err) => {
