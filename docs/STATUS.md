@@ -17,6 +17,5 @@ _Project section last updated: 2026-09-05 (driver, on the owner's instruction)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 1B | drv-1B | **DONE — PR #8 open to `master`** (https://github.com/duylongpro99/gesture2browse/pull/8). Session 8 (finish): clean-verify green (typecheck 7/7, lint + boundary OK, tests 47+50+22), `exit-check 1B` = **2 PASS 0 FAIL 1 OWNER, lock OK** (E2 PASS, E3 PASS, E1 owner-deferred on MOCK G4), branch pushed, PR opened via `obra-finishing-a-development-branch` (never merged — owner disposes). All impl tasks 1–7 + owner-authorized fix tasks 8–10 committed. Owner follow-ups on branch: real-browser context-loss check (finding 2), owner-hardware G1 re-confirm (`frame-pump.e2e.ts` active p05 ≥ 28; headless caps ~21.5), finding 5 + live palmFacing z-sign (real-camera). §8 row proposed in plan `## Status` (owner logs; agent does not edit §8). | `docs/plans/1B.md` | 2026-09-07 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
