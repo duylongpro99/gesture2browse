@@ -17,6 +17,6 @@ _Project section last updated: 2026-09-05 (driver, on the owner's instruction)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 1B | drv-1B | Execute session 3 done: Tasks 5–6 on branch (offscreen worker robustness + wired trained MLP/landmark-filter/palmFacing into GestureFrame + FSM forwarding; restart-on-stream-end with storm guard + self-recovery). E2 PASS; Task 7 remains; E3 FAIL until Task 7; E1 owner-deferred (MOCK G4). | `docs/plans/1B.md` | 2026-09-07 |
+| 1B | drv-1B | **All impl tasks done (1–7); E2 PASS + E3 PASS; E1 owner-deferred.** Session 5 landed Task 7 (adaptive-fps E3 e2e) + ran the final whole-branch review. NEEDS-OWNER before finishing: review found 2 confirmed correctness bugs outside session scope — `machine.ts` Paused re-arm asymmetry, and `webglcontextlost` recovery is dead code (non-functional context-loss recovery, a Task-6 deliverable) — plus 3 minors and a `frame-pump.e2e` regression. Owner authorizes follow-up fix sessions vs. defer; then finish/merge. | `docs/plans/1B.md` | 2026-09-07 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
