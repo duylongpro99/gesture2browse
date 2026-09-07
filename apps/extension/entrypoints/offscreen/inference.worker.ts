@@ -66,7 +66,7 @@ async function loadClassifier(weightsUrl: string): Promise<Classifier> {
 function isMlpWeights(value: unknown): value is MlpWeights {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
-  return Array.isArray(v.layers) && Array.isArray(v.labels);
+  return Array.isArray(v.layers) && Array.isArray(v.labels) && typeof v.featureVersion === 'string';
 }
 
 async function run(msg: StartPump): Promise<void> {
