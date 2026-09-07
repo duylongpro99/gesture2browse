@@ -1,7 +1,7 @@
 import { createActor } from 'xstate';
 import type { FixtureRecord, Intent, TransitionLogEntry } from '@gesture/protocol';
 import { normalizeLandmarks } from './normalize.js';
-import { KnnClassifier } from './classifier.js';
+import { KnnClassifier, type Classifier } from './classifier.js';
 import { createGestureMachine, type FrameInput } from './machine.js';
 
 // Render an XState state value as a dotted path: a string returns itself; an
@@ -63,11 +63,12 @@ export function replayFrames(frames: FrameInput[]): { intents: Intent[]; transit
   return { intents, transitions };
 }
 
-// Drives each fixture frame through normalize -> classifier -> FSM, collecting the
-// Intents the machine emits. The machine owns all timing; replay only extracts
-// features and forwards frames. With an untrained placeholder classifier every
-// frame is 'none', so a fixture emits Intents only once a real model is supplied.
-export function replayFixture(record: FixtureRecord): Intent[] {
+// Drives each fixture frame through normalize -> the supplied classifier -> FSM,
+// collecting the Intents the machine emits. The machine owns all timing; replay
+// only extracts features and forwards frames. This is the golden-suite entry
+// point (Exit E2): swap in a trained MlpClassifier to replay the real
+// perception pipeline through the FSM.
+export function replayFixtureWith(record: FixtureRecord, classifier: Classifier): Intent[] {
   const intents: Intent[] = [];
   const actor = createActor(createGestureMachine());
   actor.on('Arm', (e) => intents.push(e));
@@ -75,7 +76,6 @@ export function replayFixture(record: FixtureRecord): Intent[] {
   actor.on('Scroll', (e) => intents.push(e));
   actor.start();
 
-  const classifier = new KnnClassifier();
   let prevWristY: number | null = null;
   let prevTs: number | null = null;
 
@@ -108,4 +108,11 @@ export function replayFixture(record: FixtureRecord): Intent[] {
     actor.send({ type: 'FRAME', frame });
   }
   return intents;
+}
+
+// Replays a fixture through the placeholder KnnClassifier (default unchanged).
+// With the untrained placeholder every frame is 'none', so a fixture emits
+// Intents only once a real model is supplied via `replayFixtureWith`.
+export function replayFixture(record: FixtureRecord): Intent[] {
+  return replayFixtureWith(record, new KnnClassifier());
 }

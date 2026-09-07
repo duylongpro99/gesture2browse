@@ -11,3 +11,8 @@ export const MIN_CONFIDENCE = 0.5;
 // vy (normalized units/s) -> CSS px conversion for Scroll.dy. v0 placeholder;
 // this is a fixture-tunable (retune via fixture replay), not a plan constant.
 export const SCROLL_PX_PER_UNIT = 400;
+// Confidence-vote window: a gesture label must be classified for this many
+// CONSECUTIVE frames before the FSM lets it fire (arm/scroll), so a single
+// transient/edge-pose frame cannot trigger an action. Fixture-tunable — retune
+// via the golden replay suite (replay-golden.test.ts, Exit E2).
+export const VOTE_FRAMES = 3;
