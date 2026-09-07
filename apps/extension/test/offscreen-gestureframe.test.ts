@@ -41,6 +41,7 @@ describe('createGestureFrameSource', () => {
     expect(frame.landmarks).toBeUndefined();
     expect(frame.present).toBe(true);
     expect(frame.fingers).toHaveLength(5);
+    expect(typeof frame.palmFacing).toBe('boolean');
   });
 
   it('computes velocity from consecutive frames of a moving hand', () => {

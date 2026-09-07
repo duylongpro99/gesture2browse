@@ -16,6 +16,7 @@ export function toFrameInput(frame: GestureFrame): FrameInput {
     gesture: frame.gesture,
     score: frame.score,
     velocity: frame.velocity,
+    palmFacing: frame.palmFacing,
   };
 }
 

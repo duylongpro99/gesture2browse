@@ -1,11 +1,23 @@
 import type { GestureFrame } from '@gesture/protocol';
-import { normalizeLandmarks, OneEuroFilter, pinchDistance, fingerExtension, KnnClassifier } from '@gesture/gesture-core';
+import {
+  normalizeLandmarks,
+  OneEuroFilter,
+  pinchDistance,
+  fingerExtension,
+  KnnClassifier,
+  createLandmarkFilter,
+  palmFacing,
+  type Classifier,
+} from '@gesture/gesture-core';
 
 // Composes gesture-core's pure perception pieces into a per-frame GestureFrame:
-// normalize -> 1€ filter (pointer smoothing) -> features -> classifier. Pure
-// module: no DOM/chrome.* here (offscreen.md / gesture-core.md boundaries).
-// ALL gesture timing (hold/cooldown/hysteresis) lives in gesture-core's FSM, not
-// here — this file only derives the instantaneous per-frame observation.
+// landmark filter (per-point 1€ smoothing on 0,4,8,9) -> normalize -> 1€ filter
+// (pointer smoothing) -> features -> classifier -> palmFacing. Pure module: no
+// DOM/chrome.* here (offscreen.md / gesture-core.md boundaries). ALL gesture
+// timing (hold/cooldown/hysteresis) lives in gesture-core's FSM, not here —
+// this file only derives the instantaneous per-frame observation. The
+// classifier is injected (defaults to KnnClassifier) so the worker can pass a
+// trained MlpClassifier without this module knowing about fetch/network.
 
 // 1€ filter cutoffs below are perception-smoothing parameters (remove per-frame
 // jitter in the derived pointer position); they are NOT gesture-timing constants
@@ -27,10 +39,10 @@ export interface GestureFrameSource {
   next(landmarks: number[] | null, ts: number): GestureFrame;
 }
 
-export function createGestureFrameSource(): GestureFrameSource {
+export function createGestureFrameSource(classifier: Classifier = new KnnClassifier()): GestureFrameSource {
   const filterX = new OneEuroFilter(POINTER_FILTER_OPTS);
   const filterY = new OneEuroFilter(POINTER_FILTER_OPTS);
-  const classifier = new KnnClassifier();
+  const landmarkFilter = createLandmarkFilter();
 
   let prevPointer = { x: 0, y: 0 };
   let prevTs: number | null = null;
@@ -53,10 +65,15 @@ export function createGestureFrameSource(): GestureFrameSource {
         return frame;
       }
 
+      // Per-point 1€ smoothing on the wrist/thumb-tip/index-tip/middle-MCP
+      // landmarks before anything else derives from them (normalize, features,
+      // classify, palmFacing all read the filtered landmarks).
+      const filtered = landmarkFilter.next(landmarks, ts);
+
       // Pointer = index-tip (landmark 8), in MediaPipe's normalized image space
       // ([0,1]^2), 1€-filtered to remove per-frame jitter (calibrated active-box
       // mapping to viewport is a later phase; arch §3.1).
-      const [rawX, rawY] = point(landmarks, INDEX_TIP);
+      const [rawX, rawY] = point(filtered, INDEX_TIP);
       const x = filterX.filter(rawX, ts);
       const y = filterY.filter(rawY, ts);
 
@@ -64,14 +81,15 @@ export function createGestureFrameSource(): GestureFrameSource {
       const vx = dtMs !== null ? (x - prevPointer.x) / (dtMs / 1000) : 0;
       const vy = dtMs !== null ? (y - prevPointer.y) / (dtMs / 1000) : 0;
 
-      const normalized = normalizeLandmarks(landmarks);
+      const normalized = normalizeLandmarks(filtered);
       const pinch = pinchDistance(normalized);
       const fingers = fingerExtension(normalized);
       const { label, score } = classifier.classify(normalized);
+      const facing = palmFacing(filtered);
 
       // Hand-span (wrist -> middle-MCP) in raw image space, used as the bbox scale.
-      const [wx, wy] = point(landmarks, WRIST);
-      const [mx, my] = point(landmarks, MIDDLE_MCP);
+      const [wx, wy] = point(filtered, WRIST);
+      const [mx, my] = point(filtered, MIDDLE_MCP);
       const scale = Math.hypot(mx - wx, my - wy);
 
       const pointer = { x, y };
@@ -88,6 +106,7 @@ export function createGestureFrameSource(): GestureFrameSource {
         velocity: { vx, vy },
         scale,
         pointer,
+        palmFacing: facing,
       };
     },
   };

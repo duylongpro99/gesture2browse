@@ -33,6 +33,7 @@ const WINDOW_MS = 2000;
 const origin = browser.runtime.getURL('/');
 const WASM_BASE = new URL('wasm', origin).href;
 const MODEL_URL = new URL('models/hand_landmarker.task', origin).href;
+const WEIGHTS_URL = new URL('models/gesture-mlp.json', origin).href;
 
 // Long-lived Port to the service worker carrying discrete GestureFrames (arch
 // §3.1/§3.2). Opened once at document load, independent of pump start/stop.
@@ -74,6 +75,7 @@ async function startPump(): Promise<void> {
     stream: readable,
     wasmBase: WASM_BASE,
     modelUrl: MODEL_URL,
+    weightsUrl: WEIGHTS_URL,
     windowMs: WINDOW_MS,
     preferredDelegate: 'webgl',
   };
