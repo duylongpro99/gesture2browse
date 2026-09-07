@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Refresh an existing milestone-kit install in one command, from the project root:
+# re-runs the kit's install (script and hook copies, skill links, the templates
+# that do not exist yet, the .gitignore block, the stamp), then scripts/bootstrap/check,
+# and with --commit commits what the refresh changed as one `[docs]` commit.
+#
+# The kit is found through the .milestone-kit stamp (kit=<path>), which is why this
+# must run from the project and not from the project's own copy of install (that
+# copy would take the project for the kit). --kit PATH overrides the stamp, e.g.
+# after the kit checkout moved.
+#
+# Usage: scripts/bootstrap/update [--commit] [--kit PATH] [--agent claude|codex]
+# Prints the install lines (COPIED: / SEEDED: / LINKED: / MANUAL: …), then the check
+# summary, then either the list of changed paths to commit or the COMMIT: line.
+# Exit: 0; 2 usage; 3 not a git repo / no stamp; 4 kit path has no install script.
+set -euo pipefail
+commit=0; kit=""; agent=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --commit) commit=1; shift ;;
+    --kit) kit=${2:-}; shift 2 ;;
+    --kit=*) kit=${1#*=}; shift ;;
+    --agent) agent=${2:-}; shift 2 ;;
+    --agent=*) agent=${1#*=}; shift ;;
+    *) echo "usage: update [--commit] [--kit PATH] [--agent claude|codex]" >&2; exit 2 ;;
+  esac
+done
+proj=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "not inside a git repository" >&2; exit 3; }
+cd "$proj"
+if [ -z "$kit" ]; then
+  kit=$(sed -n 's/^kit=//p' .milestone-kit 2>/dev/null | head -1)
+  [ -n "$kit" ] || { echo "no .milestone-kit stamp in $proj; for a first install run <kit>/scripts/bootstrap/install $proj" >&2; exit 3; }
+fi
+[ -x "$kit/scripts/bootstrap/install" ] || { echo "kit at $kit has no scripts/bootstrap/install (checkout moved? pass --kit PATH)" >&2; exit 4; }
+[ -n "$agent" ] || agent=$(sed -n 's/^MS_AGENT=//p' scripts/milestone/config 2>/dev/null | tr -d "\"'" | head -1)
+
+before=$(git -C "$kit" rev-parse --short HEAD 2>/dev/null || echo unknown)
+echo "===== update  $proj  ← kit $kit @ $before${agent:+ (agent=$agent)}"
+out=$(mktemp "${TMPDIR:-/tmp}/update.XXXXXX"); trap 'rm -f "$out"' EXIT
+"$kit/scripts/bootstrap/install" "$proj" ${agent:+--agent "$agent"} | tee "$out"
+
+echo
+echo "===== check"
+scripts/bootstrap/check --no-tests 2>&1 | grep -E '^(DRIFT|MISSING|MALFORMED|MANUAL|summary):' || true
+
+# what the refresh changed: the paths behind COPIED:/SEEDED: lines that git sees as modified or new
+changed=$(sed -nE 's/^(COPIED|SEEDED): ([^ ]+).*/\2/p' "$out" | while IFS= read -r p; do
+  [ -e "$p" ] || continue
+  git check-ignore -q "$p" && continue
+  [ -n "$(git status --porcelain --untracked-files=all -- "$p")" ] && printf '%s\n' "$p"
+done || true)
+echo
+if [ -z "$changed" ]; then echo "summary: nothing to commit; the project already matches kit $before"; exit 0; fi
+if [ $commit = 1 ]; then
+  printf '%s\n' "$changed" | xargs git add --
+  git commit -q -m "[docs] refresh milestone-kit to $before" \
+    -m "scripts/bootstrap/update: $(printf '%s' "$changed" | tr '\n' ' ')" \
+    -m "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+  echo "COMMIT: $(git rev-parse --short HEAD) — $(printf '%s\n' "$changed" | wc -l | tr -d ' ') paths"
+else
+  echo "changed (re-run with --commit, or commit yourself):"; printf '%s\n' "$changed" | sed 's/^/  /'
+fi

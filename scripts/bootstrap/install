@@ -78,10 +78,17 @@ if [ "$agent" = claude ]; then
   [ -f "$proj/.claude/settings.local.json" ] || [ -f "$proj/.claude/settings.local.json.example" ] || { cp "$kit/templates/claude/settings.local.json.example" "$proj/.claude/settings.local.json.example"; echo "SEEDED: .claude/settings.local.json.example (owner copies to settings.local.json and edits the allowlist)"; }
 fi
 
-# .gitignore block
+# .gitignore block: appended once; between its two markers it is the kit's, so a
+# newer template replaces it in place (the owner's own lines outside it are kept).
 if ! grep -q '^# ---- milestone-kit' "$proj/.gitignore" 2>/dev/null; then
   { [ -f "$proj/.gitignore" ] && [ -n "$(tail -c1 "$proj/.gitignore")" ] && echo; cat "$kit/templates/gitignore.block"; } >> "$proj/.gitignore"
   echo "COPIED: .gitignore (milestone-kit block appended)"
+elif ! diff -q <(awk '/^# ---- milestone-kit/{p=1} p{print} /^# ---- end milestone-kit/{p=0}' "$proj/.gitignore") "$kit/templates/gitignore.block" >/dev/null 2>&1; then
+  awk -v tpl="$kit/templates/gitignore.block" '
+    /^# ---- milestone-kit/ && !done { while ((getline l < tpl) > 0) print l; skip=1; done=1; next }
+    skip && /^# ---- end milestone-kit/ { skip=0; next }
+    !skip { print }' "$proj/.gitignore" > "$proj/.gitignore.tmp" && mv "$proj/.gitignore.tmp" "$proj/.gitignore"
+  echo "COPIED: .gitignore (milestone-kit block refreshed)"
 fi
 
 # skills: always into .claude/skills (the scripts resolve briefs.md and the session script
@@ -99,6 +106,7 @@ if [ $skills = 1 ]; then
     mkdir -p "$proj/$d"
     link "$d" driving-a-milestone "$kit/skills/driving-a-milestone"
     link "$d" bootstrapping-milestones "$kit/skills/bootstrapping-milestones"
+    link "$d" adding-a-milestone "$kit/skills/adding-a-milestone"
     link "$d" cris-managed-session "$gck/skills/$session_skill"
     if [ -x "$gck/link-superpowers-skills.sh" ]; then
       "$gck/link-superpowers-skills.sh" "$proj" --prefix obra --dest-subdir "$d" | sed "s|^linked |LINKED: $d/|" | grep -v '^$' || true
@@ -122,7 +130,8 @@ if [ $templates = 1 ]; then
   seed docs/sdd/README.md docs/sdd/README.md
   seed docs/adr/README.md docs/adr/README.md
   seed docs/adr/0000-template.md docs/adr/0000-template.md
-  mkdir -p "$proj/docs/journal" "$proj/docs/tickets"; [ -e "$proj/docs/journal/.gitkeep" ] || { : > "$proj/docs/journal/.gitkeep"; echo "SEEDED: docs/journal/.gitkeep"; }
+  seed docs/journal/README.md docs/journal/README.md
+  mkdir -p "$proj/docs/tickets"
   [ -e "$proj/docs/tickets/.gitkeep" ] || { : > "$proj/docs/tickets/.gitkeep"; echo "SEEDED: docs/tickets/.gitkeep"; }
   [ -d "$proj/.claude/rules" ] && [ -z "$(ls -A "$proj/.claude/rules")" ] && { cp "$kit/templates/rules/component.md" "$proj/.claude/rules/_component.template.md"; echo "SEEDED: .claude/rules/_component.template.md (copy per component, then delete)"; }
 fi

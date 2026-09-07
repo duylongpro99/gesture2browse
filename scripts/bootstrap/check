@@ -47,14 +47,14 @@ stage  id                  artifact                                           fi
 3      plans-readme        docs/plans/README.md (five questions, ## Status, ## Exit checks, Superpowers)   template → agent fills {{…}}
 3      sdd-readme          docs/sdd/README.md                                 template
 3      adr                 docs/adr/README.md + 0000-template.md              template → agent fills {{…}}
-3      journal             docs/journal/                                      install
+3      journal             docs/journal/README.md (scripts/milestone/journal writes docs/journal/<slug>.md per milestone)   install
 3      spike-results       docs/spike-results.md, only when the roadmap has gates (G<n>)   template → agent
 4      scripts             scripts/milestone/*, scripts/hooks/*, scripts/sdd/*, executable   install
 4      config              scripts/milestone/config sources cleanly, no {{…}}   agent
 4      settings            hooks file for MS_AGENT (.claude/settings.json | .codex/hooks.json) wires the three hooks   install / owner merges
 4      agents-md           AGENTS.md (MS_AGENT=codex only; templates/AGENTS.md, points Codex at CLAUDE.md and the rule files)   install
 4      gitignore           .gitignore has the milestone-kit block             install
-4      skills              .claude/skills (and .agents/skills for codex): driving-a-milestone, cris-managed-session, obra-* the briefs name   install
+4      skills              .claude/skills (and .agents/skills for codex): driving-a-milestone, cris-managed-session, obra-* the briefs name (bootstrapping-milestones, adding-a-milestone linked too)   install
 4      tools               git, jq, gh on PATH; the MS_AGENT CLI and herdr (OWNER when absent)   owner
 4      local-settings      .claude/settings.local.json allowlist (claude; NOTE for codex)   owner
 4      tests               scripts/milestone/tests/*.sh pass                  kit
@@ -182,7 +182,7 @@ if need_file docs/plans/README.md plans-readme; then
 fi
 need_file docs/sdd/README.md sdd-readme && OK "sdd-readme"
 need_file docs/adr/README.md adr && need_file docs/adr/0000-template.md adr && OK "adr — README + template"
-[ -d docs/journal ] && OK "journal — docs/journal/" || MISS "journal — docs/journal/ (session-end writes go there)"
+need_file docs/journal/README.md journal && OK "journal — docs/journal/README.md (scripts/milestone/journal writes docs/journal/<slug>.md per milestone)"
 if [ "${gates:-0}" -gt 0 ]; then
   need_file docs/spike-results.md spike-results && OK "spike-results — roadmap has $gates gate rows"
 else NOTE "spike-results — roadmap has no Gate column; docs/spike-results.md not required"; fi
@@ -192,7 +192,7 @@ stage "4 — tooling"
 kit=$(sed -n 's/^kit=//p' .milestone-kit 2>/dev/null); [ -n "$kit" ] || kit=$(cd "$here/../.." && pwd)
 [ -d "$kit/scripts" ] || NOTE "kit — .milestone-kit points at $kit, which has no scripts/ (kit moved?); re-run install from its new location to restamp and refresh the skill links"
 bad=""
-for f in claim spawn brief wait status exit-check scope log-decision next driver-state lib.sh; do [ -x "scripts/milestone/$f" ] || bad="$bad scripts/milestone/$f"; done
+for f in claim spawn brief wait status exit-check scope log-decision next driver-state journal lib.sh; do [ -x "scripts/milestone/$f" ] || bad="$bad scripts/milestone/$f"; done
 for f in guard-scope.sh require-handoff.sh guard-superpowers-paths.sh; do [ -x "scripts/hooks/$f" ] || bad="$bad scripts/hooks/$f"; done
 for f in sdd-workspace task-brief review-package; do [ -x "scripts/sdd/$f" ] || bad="$bad scripts/sdd/$f"; done
 [ -z "$bad" ] && OK "scripts — milestone, hooks, sdd scripts present and executable" || MISS "scripts — not present/executable:$bad (scripts/bootstrap/install)"

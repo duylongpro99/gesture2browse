@@ -81,7 +81,7 @@ cat > docs/plans/0D-click.md <<'EOF'
 
 **Done:** survey ran.
 
-**Proposed decision for roadmap §8 (owner logs; agent does not edit §8):**
+**Proposed decision(s) for roadmap §8 (owner logs; agent does not edit §8):**
 > | 2026-09-10 | **G5 (0D) click dispatch default = content-script.** CDP opt-in. | G5 (0D): 20-site survey | Recorded in `spike-results.md §G5` |
 
 **Blockers:** none.

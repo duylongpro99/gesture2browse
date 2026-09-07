@@ -9,7 +9,9 @@
 # Lines the driver acts on (SKILL.md step 5): `OUT-OF-SCOPE: <path>`,
 # `COMMIT-CHECK: <commit> <problem>`, `SESSION-MISMATCH: ...`, `HISTORY: ...`,
 # the exit-check `summary:` / `lock:` lines and any AT-RISK / DISAGREE /
-# OWNER-CLAIM / MISSING / UNMATCHED / TAMPERED row, `WARN:` lines.
+# OWNER-CLAIM / MISSING / UNMATCHED / TAMPERED row, `WARN:` lines, and the
+# `JOURNAL=` line (scripts/milestone/journal --check: the worker's session-end
+# write of the tracked docs/journal/<SLUG>.md, with its owner-steps count).
 #
 # Usage: scripts/milestone/status <MILESTONE-ID> [--full]     STATUS_NO_CHECKS=1 skips exit-check
 #   --full  print the whole dump instead of the verdict (what this script printed before)
@@ -56,6 +58,9 @@ git log --oneline -5
 
 sec "exit checks  (scripts/milestone/exit-check $m --fast; full run before and after finish)"
 if [ "${STATUS_NO_CHECKS:-}" = 1 ]; then echo "(skipped: STATUS_NO_CHECKS=1)"; else "$here/exit-check" "$m" --fast; fi
+
+sec "journal  (scripts/milestone/journal $m --check; the tracked docs/journal/<SLUG>.md)"
+"$here/journal" "$m" --check 2>&1 || true
 
 sec "scope  .claude/scope.json (written by spawn)"
 if [ ! -f .claude/scope.json ]; then
@@ -138,6 +143,8 @@ hist_v="ok"; [ "$hist" = 0 ] || hist_v="rewritten"
 summary=$(grep -m1 -E '^summary: [0-9]+ PASS' "$out" | sed 's/^summary: *//' || true)
 [ -n "$summary" ] || summary=$(grep -m1 -E '^exit-checks: none|^\(skipped' "$out" || echo "(no exit-check summary; see file)")
 lock=$(grep -m1 -E '^lock: (OK|NONE|FROZEN|TAMPERED|EXISTS)' "$out" | sed 's/^lock: *//' || true); [ -n "$lock" ] || lock="none"
+journal_v=$(grep -m1 '^JOURNAL=' "$out" | sed 's/^JOURNAL=//' || true); [ -n "$journal_v" ] || journal_v="(no journal --check line; see file)"
+[ "$role" != audit ] || journal_v="n/a (audit writes no journal)"
 attention=$(grep -E '^(E|I)[0-9]+ .*→ (AT-RISK|DISAGREE|OWNER-CLAIM|MISSING|UNMATCHED)|^UNMATCHED |^lock: TAMPERED|^OUT-OF-SCOPE:|^COMMIT-CHECK:|^HISTORY:|^WARN: |^SESSION-MISMATCH:|^   \| ' "$out" || true)
 
 # Role artifacts (facts only; the outcome table in SKILL.md says what DONE needs).
@@ -171,6 +178,7 @@ echo "OUTCOME=${outcome:-none}"
 echo "SCOPE=$scope_v  COMMITS=$commits_v  HISTORY=$hist_v  WARN=$warn"
 echo "EXIT=$summary"
 echo "LOCK=$lock"
+echo "JOURNAL=$journal_v"
 echo "ARTIFACTS: $art"
 echo "FULL=$out   (read only when a line above is not clean/ok/none, or ARTIFACTS falls short of the role's DONE rule)"
 sec "handoff  $handoff"

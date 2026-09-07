@@ -1,0 +1,347 @@
+#!/usr/bin/env bash
+# The milestone's durable record: docs/journal/<SLUG>.md, tracked on branch <M>
+# and merged into the base branch with the PR. It holds what was implemented
+# (from git), how to verify it (the frozen ## Exit checks rows, the owner's
+# steps, the last results), which sessions built it (from the handoffs, while
+# they still exist) and the decisions it proposed. The gitignored scratch under
+# docs/sdd/<M>/ (handoffs, exit-check reports, driver.json) dies with the
+# worktree; this file is what the owner reads and re-runs afterwards, without
+# the session that built it.
+#
+# Generated sections are rewritten from facts on every run. The worker writes
+# only two blocks, which every run keeps: `### Owner steps` (the steps behind
+# each `owner` row of ## Exit checks) and `## Notes`.
+#
+# Usage: scripts/milestone/journal <MILESTONE-ID>            (re)write docs/journal/<SLUG>.md in the worktree
+#        scripts/milestone/journal <MILESTONE-ID> --stdout   print it instead of writing
+#        scripts/milestone/journal <MILESTONE-ID> --check    one line: JOURNAL=ok|stale|missing (…); exit 0
+#        scripts/milestone/journal <MILESTONE-ID> --recheck  run the Verification commands from the current
+#                                                            checkout (no worktree, no session), rewrite the
+#                                                            "Last result" column, append a ### Runs line;
+#                                                            exit 1 when a row FAILs
+# Sections (H = header, G = generated, K = kept from the previous version):
+#   H  table: plan, branch and base, roadmap section, PR, last update
+#   G  ## Verification  the ## Exit checks rows + "Last result" from docs/sdd/<M>/exit-check.last
+#                       (written by exit-check on every run) or the previous journal
+#   K     ### Owner steps  one `**E<n> — <criterion>**` block per owner row, written by the worker
+#   K+    ### Runs         appended: every full exit-check run and every --recheck, one dated line
+#   G  ## Implemented   commits base..HEAD grouped by their `[component] task N` body line, with files
+#   K+ ## Sessions      one row per handoff (current and archived session-*-handoff.md), keyed by N
+#   G  ## Decisions     the plan's proposed §8 row; ADRs added on the branch
+#   K  ## Notes         worker free text
+# Exit: 0; 2 usage; 3 no worktree (write/check) or no journal (--recheck); 4 --recheck with no Verification rows.
+set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+[ $# -ge 1 ] || { echo "usage: journal <MILESTONE-ID> [--stdout|--check|--recheck]" >&2; exit 2; }
+m=$1; shift; mode=write
+for a in "$@"; do
+  case "$a" in --stdout) mode=stdout ;; --check) mode=check ;; --recheck) mode=recheck ;; *) echo "unknown flag $a" >&2; exit 2 ;; esac
+done
+here=$(cd "$(dirname "$0")" && pwd)
+root=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+today=$(date +%F)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/journal.XXXXXX"); trap 'rm -rf "$tmp"' EXIT
+
+# Section helpers over an existing journal --------------------------------------------
+# body of `## <name>` up to the next `## ` (h2) or, for h3, the next `### `/`## `
+h2_body() { awk -v h="## $1" 'index($0, h) == 1 && length($0) == length(h) {p=1; next} /^## /{p=0} p' "$2"; }
+h3_body() { awk -v h="### $1" 'index($0, h) == 1 && length($0) == length(h) {p=1; next} /^##/ {p=0} p' "$2"; }
+trim_blank() { awk 'NF{f=1} f{l[++n]=$0; if (NF) last=n} END{for (i=1; i<=last; i++) print l[i]}'; }
+# rows of the ## Exit checks table of a plan (or of a journal's Verification): TSV id crit kind check [last]
+table_rows() { # $1 file, $2 heading
+  awk -v h="$2" -F'|' '
+    index($0, h) == 1 {p=1; next} /^## /{p=0}
+    p && /^\| *[EI][0-9]+ *\|/ {
+      for (i = 2; i <= NF; i++) gsub(/^[ \t]+|[ \t]+$/, "", $i)
+      c = $5; sub(/^`/, "", c); sub(/`$/, "", c)
+      printf "%s\t%s\t%s\t%s\t%s\n", $2, $3, $4, c, (NF >= 7 ? $6 : "")
+    }' "$1"
+}
+plan_file() { # docs/plans/<slug>.md, else the first non-spec/impl docs/plans/<M>*.md
+  local f
+  [ -f "docs/plans/$slug.md" ] && { echo "docs/plans/$slug.md"; return; }
+  for f in docs/plans/"$m"*.md; do [ -f "$f" ] || continue; case "$f" in *.spec.md|*.impl.md) ;; *) echo "$f"; return ;; esac; done
+  return 0
+}
+owner_steps_have() { # ids of owner rows that have a **E<n> …** block under ### Owner steps
+  [ -f "$journal" ] || return 0
+  h3_body "Owner steps" "$journal" | { grep -oE '^\*\*[EI][0-9]+' || true; } | tr -d '*' | sort -u
+}
+
+# ---- --recheck: from whatever checkout we are in; the journal is the contract --------
+if [ "$mode" = recheck ]; then
+  top=$(git rev-parse --show-toplevel); cd "$top"
+  ms_load_config "$root"
+  slug=$(ms_slug "$m"); journal=$(ms_journal "$m")
+  [ -f "$journal" ] || { echo "no $journal in $top (the journal is written on branch $m by scripts/milestone/journal $m and merged with the PR)" >&2; exit 3; }
+  table_rows "$journal" "## Verification" > "$tmp/rows"
+  [ -s "$tmp/rows" ] || { echo "$journal has no Verification rows to run" >&2; exit 4; }
+  sha=$(git rev-parse --short HEAD); branch=$(git rev-parse --abbrev-ref HEAD)
+  timeout_s=${EXIT_CHECK_TIMEOUT:-900}
+  deny_any='(git push|rm -rf|curl |wget |ssh |sudo |chmod |> */dev/)'
+  run_to() { ( perl -e '
+      my $t = shift; my $pid = fork; die "fork: $!" unless defined $pid;
+      if (!$pid) { setpgrp(0, 0); exec @ARGV; exit 127 }
+      $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 2; kill "KILL", -$pid; exit 124 };
+      alarm $t; waitpid($pid, 0); my $s = $?;
+      exit(($s & 127) ? 128 + ($s & 127) : ($s >> 8));
+    ' "$timeout_s" bash -c "$1" ) > "$2" 2>&1 && return 0 || return $?; }
+  printf '===== journal --recheck %s  (%s @ %s on %s; %s)\n' "$m" "$top" "$sha" "$branch" "$journal"
+  pass=0; fail=0; owner=0; other=0; : > "$tmp/results"
+  have=$(owner_steps_have)
+  while IFS=$'\t' read -r id crit kind check last; do
+    if [ "$kind" = owner ]; then
+      if printf '%s\n' "$have" | grep -qx "$id"; then result="OWNER (steps in $journal)"; else result="OWNER (no steps in $journal)"; fi
+      owner=$((owner + 1))
+    elif ! printf '%s' "$check" | grep -Eq "$MS_CHECK_ALLOW" || printf '%s' "$check" | grep -Eq "$deny_any"; then
+      result="REFUSED (command outside MS_CHECK_ALLOW)"; other=$((other + 1))
+    else
+      note=""; [ "$kind" = clean-clone ] && note=" (in this checkout, not a clean clone)"
+      if run_to "$check" "$tmp/out.$id"; then result="PASS$note"; pass=$((pass + 1))
+      else rc=$?
+        if [ "$rc" = 124 ]; then result="TIMEOUT (${timeout_s}s)"; other=$((other + 1)); else result="FAIL (exit $rc)$note"; fail=$((fail + 1)); fi
+      fi
+    fi
+    printf '%-3s %-14s %s\n' "$id" "$kind" "$result"
+    [ -f "$tmp/out.$id" ] && case "$result" in FAIL*|TIMEOUT*) tail -5 "$tmp/out.$id" | sed 's/^/   | /'; printf '   | $ %s\n' "$check" ;; esac
+    printf '%s\t%s\n' "$id" "${result%% *}" >> "$tmp/results"
+  done < "$tmp/rows"
+  summary="$pass PASS $fail FAIL $owner OWNER $other other"
+  echo "summary: $summary"
+  # rewrite the Last result column and append the run
+  awk -F'|' -v OFS='|' -v res="$tmp/results" -v stamp="$today @ $sha (recheck)" '
+    BEGIN { while ((getline l < res) > 0) { split(l, a, "\t"); r[a[1]] = a[2] } }
+    /^## Verification/ {v=1} v && /^## / && !/^## Verification/ {v=0}
+    v && /^\| *[EI][0-9]+ *\|/ { id=$2; gsub(/^[ \t]+|[ \t]+$/, "", id); if (id in r && r[id] != "OWNER") $6 = " " r[id] " " stamp " " }
+    { print }' "$journal" > "$tmp/j1"
+  line="- $today recheck @ $sha on $branch: $summary"
+  if grep -q '^### Runs' "$tmp/j1"; then
+    # insert after the last `- ` line of ### Runs (or right after the heading / its comment)
+    awk -v l="$line" '
+      { lines[NR] = $0 } /^### Runs/ { h = NR }
+      END {
+        ins = h; for (i = h + 1; i <= NR; i++) { if (lines[i] ~ /^##/) break; if (lines[i] ~ /^- / || lines[i] ~ /^<!--/) ins = i }
+        for (i = 1; i <= NR; i++) { print lines[i]; if (i == ins) print l }
+      }' "$tmp/j1" > "$tmp/j2"
+  else
+    { cat "$tmp/j1"; printf '\n### Runs\n%s\n' "$line"; } > "$tmp/j2"
+  fi
+  cp "$tmp/j2" "$journal"
+  echo "CHANGED: $journal (Last result column, ### Runs; uncommitted: commit it to keep this run on record)"
+  [ $fail = 0 ] || exit 1
+  exit 0
+fi
+
+# ---- write / stdout / check: inside the worktree ---------------------------------------
+wt="$root/.worktrees/$m"
+[ -d "$wt" ] || { echo "no worktree at $wt; run scripts/milestone/claim $m first (after the merge use --recheck)" >&2; exit 3; }
+cd "$wt"
+ms_load_config "$root"
+slug=$(ms_slug "$m"); journal=$(ms_journal "$m"); sdd="docs/sdd/$m"
+plan=$(plan_file)
+[ -n "$plan" ] && table_rows "$plan" "## Exit checks" > "$tmp/rows" || : > "$tmp/rows"
+n=$(jq -r '.session // empty' .claude/scope.json 2>/dev/null || true)
+
+if [ "$mode" = check ]; then
+  [ -f "$journal" ] || { echo "JOURNAL=missing ($journal; run scripts/milestone/journal $m before the session-end commit)"; exit 0; }
+  why=""
+  if [ -n "$n" ] && ! grep -Eq "^\| *$n *\|" <(h2_body Sessions "$journal"); then why="no Sessions row for session $n"; fi
+  if [ -s "$tmp/rows" ]; then
+    want=$(wc -l < "$tmp/rows" | tr -d ' '); got=$(table_rows "$journal" "## Verification" | wc -l | tr -d ' ')
+    [ "$want" = "$got" ] || why="${why:+$why; }Verification rows $got != ## Exit checks rows $want"
+  fi
+  need=$(awk -F'\t' '$3 == "owner"' "$tmp/rows" | wc -l | tr -d ' '); have=$(owner_steps_have | wc -l | tr -d ' ')
+  sess=$(h2_body Sessions "$journal" | grep -cE '^\| *[0-9]+ *\|' || true)
+  [ -z "$why" ] && echo "JOURNAL=ok (sessions $sess, owner-steps $have/$need)" || echo "JOURNAL=stale ($why; rerun scripts/milestone/journal $m, then commit it)"
+  exit 0
+fi
+
+# ---- facts -----------------------------------------------------------------------------
+base_branch=$("$here/driver-state" "$m" get base_branch 2>/dev/null || true); [ -n "$base_branch" ] || base_branch=$MS_DEFAULT_BASE
+base_sha=$(git merge-base "$base_branch" HEAD 2>/dev/null || git merge-base "origin/$base_branch" HEAD 2>/dev/null || true)
+head_sha=$(git rev-parse --short HEAD)
+esc=$(printf '%s' "$m" | sed 's/\./\\./g')
+title=$(grep -E "^###[[:space:]]+[0-9.]+[[:space:]]+Milestone[[:space:]]+$esc([^A-Za-z0-9.]|$)" docs/05-roadmap.md 2>/dev/null | head -1 \
+  | sed -E 's/^###[[:space:]]+[0-9.]+[[:space:]]+Milestone[[:space:]]+[^[:space:]]+[[:space:]]*(—|–|-)?[[:space:]]*//')
+[ -n "$title" ] || title=$slug
+section=$(ms_roadmap_section "$m" docs/05-roadmap.md 2>/dev/null || true)
+old=""; [ -f "$journal" ] && old=$journal
+pr=""
+if command -v gh >/dev/null 2>&1 && git remote get-url origin >/dev/null 2>&1; then
+  pr=$(GH_PROMPT_DISABLED=1 gh pr view "$m" --json url -q .url 2>/dev/null || true)
+fi
+[ -n "$pr" ] || pr=$(cat "$sdd"/handoff.md "$sdd"/session-*-handoff.md 2>/dev/null | grep -oE 'https://github\.com/[^ )]+/pull/[0-9]+' | head -1 || true)
+if [ -z "$pr" ] && [ -n "$old" ]; then pr=$(grep -E '^\| PR \|' "$old" | sed -E 's/^\| PR \| *//; s/ *\|$//' | head -1 || true); fi
+[ -n "$pr" ] || pr="—"
+
+# last exit-check run: docs/sdd/<M>/exit-check.last  (ran <date> <sha> <mode> <branch> / summary … / id<TAB>result)
+last="$sdd/exit-check.last"; run_date=""; run_sha=""; run_mode=""; run_summary=""
+if [ -f "$last" ]; then
+  read -r _ run_date run_sha run_mode _ < <(grep -m1 '^ran ' "$last") || true
+  run_summary=$(sed -n 's/^summary //p' "$last" | head -1)
+fi
+
+# ---- ## Verification ------------------------------------------------------------------
+{
+  echo "## Verification"
+  echo
+  echo "Run from the repo root, on branch \`$m\` or on \`$base_branch\` after the merge. \`scripts/milestone/journal $m --recheck\` runs every command below and appends a line to Runs; the \`owner\` rows are the numbered steps under Owner steps. The table is the plan's frozen \`## Exit checks\` (\`$plan\`); a change to it is a re-plan, never an edit here."
+  echo
+  if [ -s "$tmp/rows" ]; then
+    echo "| # | Criterion | Kind | Check | Last result |"
+    echo "|---|---|---|---|---|"
+    have=$(owner_steps_have)
+    while IFS=$'\t' read -r id crit kind check _; do
+      if [ "$kind" = owner ]; then
+        if printf '%s\n' "$have" | grep -qx "$id"; then lastres="owner: steps below"; else lastres="owner: no steps yet"; fi
+        cell="steps below"
+      else
+        cell="\`$check\`"; lastres=""
+        if [ -n "$run_sha" ]; then
+          r=$(awk -F'\t' -v i="$id" '$1 == i { print $2; exit }' "$last")
+          [ -n "$r" ] && lastres="$r $run_date @ $run_sha ($run_mode)"
+        fi
+        if [ -z "$lastres" ] && [ -n "$old" ]; then
+          lastres=$(table_rows "$old" "## Verification" | awk -F'\t' -v i="$id" '$1 == i { print $5; exit }')
+        fi
+        [ -n "$lastres" ] || lastres="not run yet"
+      fi
+      printf '| %s | %s | %s | %s | %s |\n' "$id" "$crit" "$kind" "$cell" "$lastres"
+    done < "$tmp/rows"
+  else
+    echo "_No \`## Exit checks\` table yet: the plan session writes it (\`docs/plans/README.md §Exit checks\`), then this section fills._"
+  fi
+  echo
+  echo "### Owner steps"
+  if [ -n "$old" ] && [ -n "$(h3_body "Owner steps" "$old" | trim_blank)" ]; then
+    h3_body "Owner steps" "$old" | trim_blank
+  else
+    echo "<!-- Written by the worker that reaches an owner row (execute brief, step 4); kept by scripts/milestone/journal. -->"
+    echo "<!-- One block per owner row: a line **E3 — <criterion>**, then the numbered steps the owner runs, then a line starting with Expected: -->"
+  fi
+  echo
+  echo "### Runs"
+  runs=""; [ -n "$old" ] && runs=$(h3_body Runs "$old" | grep -E '^- ' || true)
+  case "$run_mode" in
+    full|recheck)
+      line="- $run_date $run_mode @ $run_sha: ${run_summary:-see exit-check}"
+      printf '%s\n' "$runs" | grep -qF -- "$run_date $run_mode @ $run_sha" || runs="${runs:+$runs
+}$line" ;;
+  esac
+  if [ -n "$runs" ]; then printf '%s\n' "$runs"; else echo "<!-- appended by scripts/milestone/journal: every full exit-check run (finish) and every --recheck -->"; fi
+  echo
+} > "$tmp/verification"
+
+# ---- ## Implemented -------------------------------------------------------------------
+ledger=""; for l in "docs/sdd/$slug/progress.md" "$sdd/progress.md"; do [ -f "$l" ] && { ledger=$l; break; }; done
+impl="docs/plans/$slug.impl.md"
+task_title() { # $1 = task number → title from the ledger, else from the impl plan heading
+  local t=""
+  [ -n "$ledger" ] && t=$(awk -F'|' -v n="$1" '$2 ~ /^[ \t]*[0-9]+[ \t]*$/ { k=$2; gsub(/[ \t]/, "", k); if (k == n) { gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3; exit } }' "$ledger")
+  [ -n "$t" ] || { [ -f "$impl" ] && t=$(awk -v n="$1" '/^```/ { f = !f } !f && $0 ~ ("^#+[ \t]+Task[ \t]+" n "([^0-9]|$)") { sub(/^#+[ \t]+Task[ \t]+[0-9.]+[ \t]*:?[ \t]*/, ""); print; exit }' "$impl"); }
+  printf '%s' "$t"
+}
+{
+  echo "## Implemented"
+  echo
+  if [ -z "$base_sha" ]; then
+    echo "_Base branch \`$base_branch\` not found in this checkout; commit list unavailable._"
+  else
+    ncommits=$(git rev-list --count "$base_sha..HEAD")
+    echo "Branch \`$m\` from \`$base_branch\` @ \`$(git rev-parse --short "$base_sha")\` to \`$head_sha\`: $ncommits commits, $(git diff --shortstat "$base_sha" HEAD | sed 's/^ *//' || echo 'no changes')."
+    echo
+    : > "$tmp/commits"
+    for c in $(git rev-list --reverse "$base_sha..HEAD"); do
+      short=$(git rev-parse --short "$c"); subj=$(git log -1 --format=%s "$c")
+      body1=$(git log -1 --format=%b "$c" | awk 'NF{print; exit}')
+      key=other
+      tn=$(printf '%s' "$body1" | grep -oE '(^|[^A-Za-z])task [0-9]+(\.[0-9]+)?' | grep -oE '[0-9]+(\.[0-9]+)?' | head -1 || true)
+      if [ -n "$tn" ]; then key="task $tn"
+      elif printf '%s' "$body1" | grep -Eq '^\[docs\]'; then key=docs
+      elif printf '%s' "$subj" | grep -Eq '^\[docs\]'; then key=docs; fi
+      files=$(git diff-tree --no-commit-id -r --name-only "$c" | awk 'NR<=6{printf "%s`%s`", (NR>1?", ":""), $0} NR==7{printf ", …"}')
+      printf '%s\t%s\t%s\t%s\n' "$key" "$short" "$subj" "$files" >> "$tmp/commits"
+    done
+    group() { # $1 = key, $2 = heading
+      grep -q "^$1"$'\t' "$tmp/commits" || return 0
+      echo "$2"
+      awk -F'\t' -v k="$1" '$1 == k { printf "- `%s` %s%s\n", $2, $3, ($4 != "" ? " (" $4 ")" : "") }' "$tmp/commits"
+      echo
+    }
+    for tn in $(cut -f1 "$tmp/commits" | awk '$1 == "task" { print $2 }' | sort -t. -k1,1n -k2,2n -u); do
+      t=$(task_title "$tn"); group "task $tn" "### Task $tn${t:+ — $t}"
+    done
+    group docs "### Session-end writes (\`[docs]\`)"
+    group other "### Other commits (no \`[component] task N\` line)"
+  fi
+} > "$tmp/implemented"
+
+# ---- ## Sessions ----------------------------------------------------------------------
+{
+  echo "## Sessions"
+  echo
+  echo "| N | Role | Recorded | Outcome | Summary |"
+  echo "|---|---|---|---|---|"
+  : > "$tmp/sessions"
+  [ -n "$old" ] && h2_body Sessions "$old" | grep -E '^\| *[0-9]+ *\|' > "$tmp/sessions" || true
+  row_of() { # $1 = handoff → TSV n role outcome summary
+    local hn hr ho hs
+    hn=$(sed -n 's/^session:[[:space:]]*//p' "$1" | head -1 | tr -d '[:space:]'); [ -n "$hn" ] || return 0
+    hr=$(sed -n 's/^phase:[[:space:]]*//p' "$1" | head -1 | tr -d '[:space:]')
+    ho=$(sed -n 's/^outcome:[[:space:]]*//p' "$1" | head -1 | tr -d '[:space:]')
+    hs=$(sed -n 's/^summary:[[:space:]]*//p' "$1" | head -1 | tr '|' '/')
+    printf '%s\t%s\t%s\t%s\n' "$hn" "$hr" "$ho" "$hs"
+  }
+  for h in "$sdd"/session-*-handoff.md "$sdd/handoff.md"; do
+    [ -f "$h" ] || continue
+    r=$(row_of "$h"); [ -n "$r" ] || continue
+    hn=$(printf '%s' "$r" | cut -f1)
+    if [ "$h" = "$sdd/handoff.md" ] || ! grep -Eq "^\| *$hn *\|" "$tmp/sessions"; then
+      grep -Ev "^\| *$hn *\|" "$tmp/sessions" > "$tmp/sessions.2" || true; mv "$tmp/sessions.2" "$tmp/sessions"
+      printf '| %s | %s | %s | %s | %s |\n' "$hn" "$(printf '%s' "$r" | cut -f2)" "$today" "$(printf '%s' "$r" | cut -f3)" "$(printf '%s' "$r" | cut -f4)" >> "$tmp/sessions"
+    fi
+  done
+  sort -t'|' -k2,2n "$tmp/sessions"
+  echo
+} > "$tmp/sessions.md"
+
+# ---- ## Decisions ---------------------------------------------------------------------
+{
+  echo "## Decisions"
+  echo
+  block=""; [ -n "$plan" ] && block=$(awk '/^## Status/{s=1} s && /^\*\*Proposed decisions?(\(s\))? for roadmap §8/{p=1} p && /^[ \t]*$/ && n {exit} p {print; n++}' "$plan")
+  if [ -n "$block" ]; then echo "Proposed for roadmap §8 (the owner logs it; \`scripts/milestone/log-decision $m --apply\` after the merge):"; echo; printf '%s\n' "$block"; else echo "_No proposed §8 decision in the plan's \`## Status\` yet._"; fi
+  echo
+  adrs=""; [ -n "$base_sha" ] && adrs=$(git diff --name-only --diff-filter=A "$base_sha" HEAD -- docs/adr/ | grep -Ev 'README\.md$|0000-template\.md$' || true)
+  if [ -n "$adrs" ]; then echo "ADRs added on this branch:"; printf '%s\n' "$adrs" | sed 's/^/- `/; s/$/`/'; else echo "ADRs added on this branch: none."; fi
+  echo
+} > "$tmp/decisions"
+
+# ---- ## Notes (kept) ------------------------------------------------------------------
+{
+  echo "## Notes"
+  if [ -n "$old" ] && [ -n "$(h2_body Notes "$old" | trim_blank)" ]; then h2_body Notes "$old" | trim_blank
+  else echo "<!-- Free text by the worker (what to know that git and the tables do not say); kept by scripts/milestone/journal. -->"; fi
+} > "$tmp/notes"
+
+# ---- assemble -------------------------------------------------------------------------
+{
+  echo "# Milestone $m — $title"
+  echo
+  echo "| | |"
+  echo "|---|---|"
+  echo "| Plan | \`${plan:-docs/plans/$slug.md}\` |"
+  echo "| Branch | \`$m\` from \`$base_branch\`${base_sha:+ @ \`$(git rev-parse --short "$base_sha")\`} |"
+  echo "| Roadmap | \`docs/05-roadmap.md${section:+ §$section}\` |"
+  echo "| PR | $pr |"
+  echo "| Updated | $today @ \`$head_sha\` by \`scripts/milestone/journal $m\` |"
+  echo
+  cat "$tmp/verification" "$tmp/implemented" "$tmp/sessions.md" "$tmp/decisions" "$tmp/notes"
+} > "$tmp/journal"
+
+if [ "$mode" = stdout ]; then cat "$tmp/journal"; exit 0; fi
+mkdir -p docs/journal
+cp "$tmp/journal" "$journal"
+rows=$(wc -l < "$tmp/rows" | tr -d ' '); sess=$(grep -cE '^\| *[0-9]+ *\|' "$tmp/sessions" || true)
+commits=0; [ -f "$tmp/commits" ] && commits=$(wc -l < "$tmp/commits" | tr -d ' ')
+echo "JOURNAL: $journal (verification rows $rows, sessions $sess, commits $commits); stage it in the session-end [docs] commit"

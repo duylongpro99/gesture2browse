@@ -176,7 +176,7 @@ if [ -n "$m" ]; then
     *) echo "STATE: $m $st, not merged into $base — owner merges the PR first; log-decision refuses until then" ;;
   esac
   if [ -n "$plan" ]; then
-    awk '/^## Status/{s=1} s && /^\*\*Proposed decisions? for roadmap §8/{p=1} p && /^[ \t]*$/ && n {exit} p {print; n++}' "$plan" > "$tmp/block"
+    awk '/^## Status/{s=1} s && /^\*\*Proposed decisions?(\(s\))? for roadmap §8/{p=1} p && /^[ \t]*$/ && n {exit} p {print; n++}' "$plan" > "$tmp/block"
     if [ -s "$tmp/block" ]; then
       echo "PROPOSED-8:"; cat "$tmp/block"
       if grep -Eq '^(> *)?\|([^|]*\|){4,}' "$tmp/block"; then

@@ -12,6 +12,8 @@
 #   ms_roadmap_milestones ROADMAP   TSV id \t "Plan inputs" cell \t gate, one row per milestone
 #   ms_roadmap_s8 ROADMAP           TSV Input cell \t Result cell, one row per §8 table row
 #   ms_roadmap_section M ROADMAP    the `### x.y` number of the heading naming M (or a range holding it)
+#   ms_slug M [STATUS]              plan-file stem: the STATUS row's Plan cell, else docs/plans/<M>*.md, else M
+#   ms_journal M [STATUS]           docs/journal/<slug>.md, the milestone's durable record (scripts/milestone/journal)
 #   ms_load_config [ROOT]           project config (scripts/milestone/config) with defaults
 #
 # Config keys (all optional; scripts/milestone/config is `KEY=value` lines, sourced):
@@ -62,6 +64,21 @@ ms_status_slug()  {
   local s; s=$(ms_status_row "$1" "${2:-}" | sed -n 's|.*docs/plans/\([A-Za-z0-9._-]*\)\.md.*|\1|p')
   printf '%s\n' "${s:-$1}"
 }
+# The slug outlives the STATUS row (log-decision retires it after the merge): fall
+# back to the plan file's stem, so the journal and the plan resolve after the merge
+# too. Run from the checkout root.
+ms_slug() {
+  local m=$1 s f
+  s=$(ms_status_slug "$m" "${2:-}")
+  if [ "$s" = "$m" ]; then
+    for f in docs/plans/"$m"*.md; do
+      [ -f "$f" ] || continue
+      case "$f" in *.spec.md|*.impl.md) ;; *) s=$(basename "$f" .md); break ;; esac
+    done
+  fi
+  printf '%s\n' "$s"
+}
+ms_journal() { printf 'docs/journal/%s.md\n' "$(ms_slug "$1" "${2:-}")"; }
 
 # ---- docs/05-roadmap.md -----------------------------------------------------------
 # Two forms: a `### x.y Milestone <ID> —` heading followed by a `| **Plan inputs** | … |`

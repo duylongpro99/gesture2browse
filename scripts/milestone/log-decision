@@ -58,7 +58,7 @@ for d in "$root/.worktrees/$m" "$root"; do
   done
 done
 [ -n "$plan" ] || { echo "REFUSED: no docs/plans/$slug.md (or docs/plans/$m*.md) in the worktree or the root"; exit 6; }
-awk '/^## Status/{s=1} s && /^\*\*Proposed decisions? for roadmap §8/{p=1} p && /^[ \t]*$/ && n {exit} p {print; n++}' "$plan" > "$tmp/block"
+awk '/^## Status/{s=1} s && /^\*\*Proposed decisions?(\(s\))? for roadmap §8/{p=1} p && /^[ \t]*$/ && n {exit} p {print; n++}' "$plan" > "$tmp/block"
 row=$(grep -E '^(> *)?\|([^|]*\|){4,}' "$tmp/block" | head -1 | sed -E 's/^> *//' || true)
 [ -n "$row" ] || { echo "REFUSED: no §8 table row in the Proposed-decision block of $plan (the owner writes the row by hand)"; exit 6; }
 cellof() { printf '%s' "$row" | awk -F'|' -v i="$1" '{ c = $(i + 1); gsub(/^[ \t]+|[ \t]+$/, "", c); print c }'; }

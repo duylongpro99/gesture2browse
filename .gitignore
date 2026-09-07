@@ -52,6 +52,8 @@ docs/sdd/*/driver.json
 .claude/stop-blocks
 # frozen ## Exit checks table (scripts/milestone/exit-check --freeze)
 docs/sdd/*/exit-checks.lock
+# last exit-check results, read by scripts/milestone/journal into the tracked docs/journal/<slug>.md
+docs/sdd/*/exit-check.last
 # milestone worktrees (scripts/milestone/claim); the branch is tracked, its checkout is not
 .worktrees/
 # kit stamp written by scripts/bootstrap/install (absolute path; machine-local)
