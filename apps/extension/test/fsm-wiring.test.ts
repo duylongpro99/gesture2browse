@@ -29,6 +29,19 @@ describe('toFrameInput', () => {
       gesture: 'Open_Palm',
       score: 0.9,
       velocity: { vx: 1, vy: -2 },
+      palmFacing: undefined,
+    });
+  });
+
+  it('forwards palmFacing so the Task-4 palm-facing gate is active in production', () => {
+    const gf = frame({ ts: 123, gesture: 'Open_Palm', score: 0.9, palmFacing: false });
+    expect(toFrameInput(gf)).toEqual({
+      ts: 123,
+      present: true,
+      gesture: 'Open_Palm',
+      score: 0.9,
+      velocity: { vx: 0, vy: 0 },
+      palmFacing: false,
     });
   });
 });
@@ -44,10 +57,15 @@ describe('createFrameConsumer', () => {
       },
     });
 
-    // Open_Palm held >= PALM_CLUTCH_MS (1000ms) clutches Paused -> Armed.
+    // Open_Palm held >= PALM_CLUTCH_MS (1000ms) AND for the 3-frame confidence
+    // vote clutches Paused -> Armed.
     consumer.push(frame({ ts: 0, gesture: 'Open_Palm', score: 0.9 }));
+    consumer.push(frame({ ts: 500, gesture: 'Open_Palm', score: 0.9 }));
     consumer.push(frame({ ts: 1000, gesture: 'Open_Palm', score: 0.9 }));
-    // A confidently-held Closed_Fist with fast vertical motion scrolls.
+    // A confidently-held Closed_Fist with fast vertical motion scrolls once it too
+    // clears the 3-frame vote (the first two fist frames are suppressed).
+    consumer.push(frame({ ts: 1033, gesture: 'Closed_Fist', score: 0.9, velocity: { vx: 0, vy: -0.05 } }));
+    consumer.push(frame({ ts: 1066, gesture: 'Closed_Fist', score: 0.9, velocity: { vx: 0, vy: -0.05 } }));
     consumer.push(frame({ ts: 1100, gesture: 'Closed_Fist', score: 0.9, velocity: { vx: 0, vy: -0.05 } }));
 
     expect(intents).toEqual([{ type: 'Arm' }, { type: 'Scroll', dy: -20 }]);
