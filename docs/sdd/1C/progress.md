@@ -9,7 +9,7 @@ Task order (impl plan): 1 (protocol) → 2/3/4 (independent) → 5/6 → 7 → 8
 | 3 | page-index | `79bb32d` | **done** | interactable index + WeakMap-stable id scheme, `SpatialGrid`, selectors/visibility, `at(x,y,radius?)`. 9 happy-dom tests. |
 | 4 | page-index | `8b91fed` | **done** | snapping: speed-scaled radius, neighbour hysteresis (no-flicker property test), pinch latch. Constant `SNAP_HYSTERESIS_PX`→`SNAP_NEIGHBOUR_MARGIN_PX` (boundary-lint rule 4). |
 | 5 | content | `6be45c3` | **done** | closed-shadow cursor overlay, pure `page-plane` (snap+overlay+hover/snapshot answer), synthetic fallback click; wired in `content/index.ts` keeping 1A ready+scroll. `@gesture/page-index` added as extension dep. |
-| 6 | background | — | **blocked** | dispatcher, CDP-when-granted, pointer relay — blocked on ADR 0001 acceptance (pointer relay is the deviation). |
+| 6 | background | `5cb4d52` | **done** | dispatcher (Click CDP-or-fallback, Swipe→nav, Arm/Pause→attach/detach), `pointer` relay (ADR 0001), `cdp` (attach/detach + trustedClick/Drag, optional-perm request), `actions` (back/forward + capability-only tab/zoom), `fsm` hover+dwell merge & state tracking, `background.ts` wiring. ADR 0001 accepted (`fc24d4b`). |
 | 7 | background | — | todo | SW hardening |
 | 8 | extension | — | todo | e2e (Fitts E1, SW-recovery E3) |
 
@@ -48,3 +48,23 @@ Decisions taken within CLAUDE.md §1 (not owner-level):
 **Task 6 blocked (not started):** its pointer relay (`relayPointer` → `PageCommand.pointer` over the SW→CS port) *is* the ADR 0001 deviation, still `proposed`. Per CLAUDE.md §3 (agent drafts, human merges — finish what does not depend on the deviation, leave the draft, stop) and the impl plan ("execute proceeds only after the owner accepts it at PR review"), Task 6 is not written this session. Handoff = NEEDS-OWNER requesting ADR 0001 acceptance.
 
 Verification: `pnpm vitest run apps/extension/entrypoints/content` 10 pass; `pnpm --filter @gesture/extension typecheck` clean; biome lint clean (only the pre-existing `fps-logger` non-null-assertion warning, not this task); boundary-lint OK; `exit-check 1C --fast` → E2 + I1–I5 PASS (E1/E3 remain Task 8).
+
+### Session 3 continued (execute, Task 6; ADR 0001 accepted)
+
+Owner accepted ADR 0001 (pointer plane via SW relay) at the plan gate → flipped its status to `accepted` (`fc24d4b`) and executed Task 6 (`[background]`, `5cb4d52`). TDD (4 new test files + 2 updated 1A tests → 21 pass across the affected suites):
+- `pointer.ts` — `relayPointer(frame, fsmState, send, hover)` + `cursorStateFor`; forwards the frame's **normalized** pointer as `PageCommand.pointer`, one per frame; CursorState from FSM state + hover.
+- `cdp.ts` — `createCdp` attach/detach (Set-tracked, `onDetach` clears), `preferCdp = granted && attached`, optional-`debugger` request on first attach (denial → fallback), `trustedClick` (Runtime.evaluate scroll-into-view → recompute centre → trusted press/release), `trustedDrag`.
+- `actions.ts` — `createActions`: `back`/`forward` (`chrome.tabs` history), plus **capability-only** `selectTab`/`zoom` (no gesture binding, Q3=A).
+- `dispatcher.ts` — `dispatchIntent(intent, ctx: DispatchCtx)`: Scroll (frozen 1A) · Click → CDP trusted when `preferCdp` && hover matches, else `fallbackClick` · DragStart/DragEnd → CDP-only drag · Swipe → back/forward (Standard) / no-op (Accessibility) · Arm/Pause → CDP attach/detach · HoldGesture → no direct dispatch (2A's Agent path).
+- `fsm.ts` — `toFrameInput` forwards `pinch`/`pointer` + SW-supplied `hoverId`/`dwellEnabled`; `createFrameConsumer` tracks the FSM state from the transition delta and calls `relay` each frame.
+- `background.ts` — reads the loosely-typed `chrome` global behind the injected `DebuggerApi`/`PermissionsApi`/`TabsApi` interfaces (no `@types/chrome`); tracks `lastHover` from `PageEvent.hover`; one reused `DispatchCtx` (so a CDP drag's start bbox survives across intents).
+
+Decisions taken within CLAUDE.md §1 (not owner-level):
+- **Task 6 unit tests consolidated into `apps/extension/test/`** (not a new `entrypoints/background/test/`), matching the 1A layout (`dispatcher.test.ts`, `fsm-wiring.test.ts` already live there) and the impl plan's `test/*` file fragments; avoids a duplicate `dispatcher.test.ts`.
+- **1A `dispatcher.test.ts` rewritten** for the new `DispatchCtx` signature (Scroll behaviour preserved) and **`fsm-wiring.test.ts` updated**: frame default `pinch` `0 → 1` (an un-pinched value — `pinch:0` is fully-pinched and, now that `toFrameInput` forwards pinch, would trip the pinch guard on palm/fist frames), `toFrameInput` expectation gains `pinch`/`pointer`, and the scroll wiring now passes through `Armed.Pointing` (pointer forwarded) so the exact transition-count assertion became `persisted[0]`=Arm / `persisted.at(-1)`=Scroll — intents `[Arm, Scroll]` unchanged.
+- **CDP drag is CDP-only**; without the `debugger` grant, drag is unavailable (content synthetic events can't drive a real drag) — documented, no synthetic-drag fallback invented.
+- **`relayPointer` takes a 4th `hover` arg** (the plan sketched 3): the derivation needs the last hover to distinguish `snapped` from `pointing`; kept pure by injecting it.
+
+**Owner follow-up (out of scope):** CLAUDE.md §3 requires `docs/02-architecture.md §3.2/§2` to describe the accepted SW-relayed pointer (and keep the direct offscreen→CS port as a reserved optimization). That file is outside this session's write scope — surfaced as a path question in the handoff.
+
+Verification: affected unit suites (pointer/cdp/actions/dispatcher/fsm-wiring) 21 pass; content suite 10 pass; `pnpm --filter @gesture/extension typecheck` clean; biome lint clean (only the pre-existing `fps-logger` warning); boundary-lint OK; `exit-check 1C --fast` → E2 + I1–I5 PASS (E1/E3 remain Task 8).

@@ -18,6 +18,6 @@ _Project section last updated: 2026-09-12 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 1C | drv-1C | Execute S3: Task 5 (`[content]` cursor overlay + snapping wiring + snapshot + synthetic fallback) committed; E2 + I1–I5 PASS, E1/E3 await Task 8. **Task 6 (pointer relay) blocked — needs owner to accept ADR 0001 (its relay is the deviation).** Then Tasks 6→7→8. | `docs/plans/1C.md` | 2026-09-12 |
+| 1C | drv-1C | Execute S3: ADR 0001 accepted; Tasks 5 (`[content]` overlay/snap/snapshot/fallback) + 6 (`[background]` dispatcher, CDP+fallback, pointer relay, nav) committed. E2 + I1–I5 PASS; E1/E3 await Task 8. Next: Task 7 (SW hardening) → Task 8 (e2e). Owner follow-up: arch §3.2/§2 doc update for ADR 0001 (out of scope — see handoff). | `docs/plans/1C.md` | 2026-09-12 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
