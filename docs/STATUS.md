@@ -18,6 +18,6 @@ _Project section last updated: 2026-09-12 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 1C | drv-1C | Plan DONE (spec/impl/plan/Exit checks + 5 frozen 2A contracts); ADR 0001 (pointer via SW relay) proposed — owner must accept before execute Task 6. | `docs/plans/1C.md` | 2026-09-12 |
+| 1C | drv-1C | Execute S1 done: Tasks 1 (protocol) + 2 (gesture-core FSM) merged to branch; E2 + all 5 frozen contracts (I1–I5) PASS. Next: Tasks 3–8 (page-index/content/background/e2e). ADR 0001 still proposed — owner must accept before Task 6 pointer relay. | `docs/plans/1C.md` | 2026-09-12 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
