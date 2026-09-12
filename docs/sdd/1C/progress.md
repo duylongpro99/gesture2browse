@@ -2,16 +2,16 @@
 
 Task order (impl plan): 1 (protocol) → 2/3/4 (independent) → 5/6 → 7 → 8.
 
-| Task | Component | State | Commit | Notes |
+| Task | Component | Commit | State | Notes |
 |---|---|---|---|---|
-| 1 | protocol | **done** | `6019fa9` | `PageCommand`/`PageEvent`/`Intent` extended; new `A11yItem`, `CursorState`. Frozen 2A I1–I4 + 1C contracts pass. |
-| 2 | gesture-core | **done** | `6db31d4` | Full `Armed.*` tree (Pointing/PinchDown/Dragging/SwipeArmed/Hold). Frozen 2A I5 (Victory hold) + 1C tree/replay contracts pass. E2 model tests pass. |
-| 3 | page-index | todo | — | interactable index + id scheme |
-| 4 | page-index | todo | — | snapping |
-| 5 | content | todo | — | overlay + snapping wiring + synthetic fallback |
-| 6 | background | todo | — | dispatcher, CDP-when-granted, pointer relay (ADR 0001) |
-| 7 | background | todo | — | SW hardening |
-| 8 | extension | todo | — | e2e (Fitts E1, SW-recovery E3) |
+| 1 | protocol | `6019fa9` | **done** | `PageCommand`/`PageEvent`/`Intent` extended; new `A11yItem`, `CursorState`. Frozen 2A I1–I4 + 1C contracts pass. |
+| 2 | gesture-core | `6db31d4` | **done** | Full `Armed.*` tree (Pointing/PinchDown/Dragging/SwipeArmed/Hold). Frozen 2A I5 (Victory hold) + 1C tree/replay contracts pass. E2 model tests pass. |
+| 3 | page-index | — | todo | interactable index + id scheme |
+| 4 | page-index | — | todo | snapping |
+| 5 | content | — | todo | overlay + snapping wiring + synthetic fallback |
+| 6 | background | — | todo | dispatcher, CDP-when-granted, pointer relay (ADR 0001) |
+| 7 | background | — | todo | SW hardening |
+| 8 | extension | — | todo | e2e (Fitts E1, SW-recovery E3) |
 
 ## Session 1 (execute, Tasks 1–2)
 
