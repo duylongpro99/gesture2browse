@@ -305,24 +305,33 @@ export default defineBackground(() => {
     }
   });
 
-  // Re-inject the content script on a navigation commit for any tab whose
-  // content port is not currently live (SPA route change, or any navigation
-  // shortly after a SW restart) — Task 7.
-  if (cx?.webNavigation && cx.scripting) {
-    const reinjector = createReinjector({
-      scripting: cx.scripting,
-      hasContentPort: (tabId) => ports.hasContentPort(tabId),
-      contentScriptFiles: CONTENT_SCRIPT_FILES,
-    });
+  // Re-injection (Task 7): on a navigation commit for any tab whose content
+  // port is not currently live (SPA route change, or a navigation shortly
+  // after a SW restart), AND proactively at startup for any tab that had a
+  // content port before the restart and has not reconnected on its own (a tab
+  // that never navigates again must still recover — E3).
+  const reinjector = cx?.scripting
+    ? createReinjector({
+        scripting: cx.scripting,
+        hasContentPort: (tabId) => ports.hasContentPort(tabId),
+        contentScriptFiles: CONTENT_SCRIPT_FILES,
+      })
+    : null;
+  if (reinjector && cx?.webNavigation) {
     cx.webNavigation.onCommitted.addListener((details: NavigationDetails) =>
       reinjector.onNavigationCommitted(details),
     );
   }
 
   // Rehydrate derived state after a worker restart: which tabs had a content
-  // port (the reinjector above then re-injects them on their next navigation)
-  // and which had CDP attached. Never fabricates live Port objects.
-  void ports.restoreState();
+  // port and which had CDP attached (isAttached is informational/diagnostic
+  // here — the dispatcher re-attaches CDP on the tab's next Arm rather than
+  // reading it back). Never fabricates live Port objects. The restored
+  // content-tab set then drives the proactive re-injection above so recovery
+  // does not depend on the tab navigating again.
+  void ports.restoreState().then((restored) => {
+    reinjector?.reinjectMissing(restored.contentTabs);
+  });
 
   void gateThenPump();
 });

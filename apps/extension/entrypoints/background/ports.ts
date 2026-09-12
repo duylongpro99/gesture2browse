@@ -129,6 +129,10 @@ export function createPortRegistry(sessionStore: SessionStore = noopSessionStore
       persistCdpAttached();
     },
 
+    // Informational/diagnostic: the dispatcher re-attaches CDP itself on a
+    // tab's next Arm rather than reading this back after a restart (cdp.ts's
+    // own live `attached` set is the real-time source of truth while the
+    // worker is up), so there is no production reader of this getter today.
     isCdpAttached(tabId: number): boolean {
       return cdpAttachedTabs.has(tabId);
     },
