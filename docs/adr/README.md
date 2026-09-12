@@ -4,7 +4,7 @@ One line per ADR. Read this index, then open only the ADR you need.
 
 | ID | Title | Status | Rule broken | Exit condition |
 |---|---|---|---|---|
-| — | (none yet) | | | |
+| [0001](0001-pointer-plane-via-sw-relay.md) | Pointer plane via SW relay (`PageCommand.pointer`) | proposed | `02-architecture §3.2` "pointer moves do not pass through the service worker" / §2 direct offscreen→CS port | Accept → update arch §3.2/§2; or retire if SW-relay exceeds the §8 pointer budget on a reference machine |
 
 Template: `0000-template.md`. Statuses: `proposed` (agent drafted, owner has not decided), `accepted`, `superseded`, `retired`.
 
