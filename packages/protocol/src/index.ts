@@ -1,4 +1,6 @@
 export * from './common.js';
+export * from './a11y.js';
+export * from './cursor.js';
 export * from './gesture-frame.js';
 export * from './fixture.js';
 export * from './intent.js';
