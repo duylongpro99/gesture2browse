@@ -3,15 +3,16 @@
 **Read this first every session. Rewrite your own lines, never append. Keep under 60 lines.**
 History lives in `docs/journal/`; decisions live in `docs/05-roadmap.md §8`; per-milestone detail lives in `docs/plans/<milestone>.md ## Status`. This file is the index.
 
-_Project section last updated: 2026-09-05 (driver, on the owner's instruction)_
+_Project section last updated: 2026-09-12 (owner)_
 
 ## Project (owner or integration session only)
 
-- **Phase:** 0 — Foundations & spike (`docs/05-roadmap.md §3`). Window Sep 7 → Sep 15, 2026.
-- **Code:** 0A (scaffold, harness, `gesture-core` v0), 0B (G1 frame pump), 0C (G2 camera grant) merged to `master` (PRs #1–#3, 2026-09-05). Remaining Phase 0: 0D (G5 click-dispatch survey), 0E (G7 agent latency probe).
-- **Blockers:** owner laptop access for gate probes 0D–0E; owner's API key for 0E.
-- **Decisions pending** (inputs in roadmap §8): §8 rows for 0A interfaces and G1 (0B) = GO not yet logged — owner writes them by hand from the plans' `## Status` (`next 0A` / `next 0B` print the proposed blocks); click dispatch default (G5 → 1A/1C); browser inference vs ONNX-Web (G3/G8 → 1B); launch gesture set (G4 → 1B).
-- **Recently settled:** 2026-09-05 G2 (0C) camera grant = GO (§8); 2026-09-05 G1 (0B) frame pump gate met (`spike-results §G1`, §8 row pending); 2026-09-04 estimation model, milestone as planning unit (roadmap v0.3).
+- **Phase:** 1 — Core product (`docs/05-roadmap.md §4`). Phase 0 complete.
+- **Code:** Phase 0 all merged — 0A scaffold/harness/`gesture-core` v0, 0B (G1 frame pump), 0C (G2 camera grant), 0D (G5 click-dispatch survey), 0E (G7 agent latency probe). Phase 1: 1A vertical slice + 1B perception merged (PRs #7, #8). Next: **1C** page plane + actions (READY per `scripts/milestone/next`).
+- **Blockers:** none for 1C. Downstream 1D.1–1D.6 need owner per-screen intent; 1E needs owner y4m gesture recordings + Phase-0 bench numbers.
+- **Tooling note (2026-09-12):** 0D was rebase-merged, so its GitHub `mergeCommit` isn't on master's first-parent and `next` mis-read it as unstarted; fixed by a local `0D` marker branch at its merged tip (`9c23912`) — do not delete. `origin/0A`–`0E` are stale/diverged; ignore.
+- **Decisions pending** (inputs in roadmap §8): browser inference vs ONNX-Web (G3/G8 → final 1B); real launch gesture set (G4 → realify 1B, currently MOCK); real Fitts G6 (→ realify 1C, currently MOCK); hold times (tunable).
+- **Recently settled:** 2026-09-12 **G6 = GO (MOCK, fabricated to unblock 1C)** — snapping ON / snap radius 40 px / default pinch / Accessibility dwell 600 ms (`spike-results §G6`, §8); 2026-09-07 1B = browser-inference path, G4 MOCK; 2026-09-06 G1/G7/G8-provisional = GO, 1A interfaces frozen; 2026-09-05 G2 + G5 (CDP) = GO.
 
 ## Active workstreams (one row per milestone; edit only your row)
 

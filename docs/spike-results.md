@@ -156,13 +156,33 @@ _E1 (owner spot-check):_ **met — owner-confirmed 2026-09-05** (re-ran `SURVEY_
 - **Threshold:** ≤ **1.8 s** median acquisition at 40 px targets; **Borg CR10 ≤ 3** at 5 min elbow-supported. Snapping vs raw, pinch vs dwell (600 ms), supported vs unsupported, 5-minute blocks (`03-tech-stack §5.6`).
 - **Produced by:** owner as first participant, then 2 more.
 
-**Setup:**
+> ⚠️ **MOCK RESULT (fabricated 2026-09-12 to test-drive 1C — NOT a real Fitts study).**
+> No participants were run; the numbers below are plausible placeholders chosen to
+> unblock the 1C plan and exercise the milestone flow, exactly as the G4 MOCK row
+> did for 1B (roadmap §8). They carry **no real gate decision**. To realify:
+> run the real Fitts protocol (owner + 2 participants), replace this block, and
+> replace the mock §8 row.
 
-**Result (numbers):** _(median acquisition time per condition; click precision; Borg CR10 ratings)_
+**Setup (mock):** simulated 40 px circular targets, 9-target ring, four conditions
+crossed (snapping on/off × pinch/dwell-600 ms), 5-minute elbow-supported blocks.
+Single fabricated "participant" (owner placeholder).
 
-**Gate met? (Y/N):**
+**Result (numbers) — MOCK:**
 
-**Click-mode + snapping defaults chosen (→ §8 + `03-tech-stack §4`):**
+| Condition | Median acquisition | Click precision | Borg CR10 |
+|---|---|---|---|
+| snapping + pinch | 1.4 s | 97 % | 2.5 |
+| snapping + dwell (600 ms) | 1.6 s | 98 % | 2.0 |
+| raw + pinch | 2.1 s | 91 % | 3.0 |
+| raw + dwell (600 ms) | 2.3 s | 93 % | 2.5 |
+
+**Gate met? (Y/N):** Y **(MOCK)** — snapping conditions clear ≤ 1.8 s median at 40 px
+and Borg CR10 ≤ 3 elbow-supported.
+
+**Click-mode + snapping defaults chosen (→ §8 + `03-tech-stack §4`) — MOCK:**
+snapping **ON** by default; **initial snap radius 40 px**; general click-mode default
+**pinch**; **dwell (600 ms)** as the Accessibility-profile default (no second-hand
+coordination). Hold times remain a tunable, not fixed here.
 
 ---
 
@@ -234,7 +254,7 @@ glm-5.2,10,2653,3886,2784,4037,true,true
 | G3 Bench matrix | | |
 | G4 Precision/recall | | |
 | G5 Dispatch survey | Y | §G5 above — E3 (agent) synthetic 10/15, CDP 14/15, 4 CDP-rescues; E1 (owner) live run confirmed 2026-09-05. Default = CDP (owner-confirmed); §8 row + `03-tech-stack §4` number logged by owner post-merge |
-| G6 Fitts / ergonomics | | |
+| G6 Fitts / ergonomics | Y (MOCK) | §G6 above — **fabricated** 2026-09-12 to unblock 1C (no real study). Snapping ON, snap radius 40 px, default pinch / Accessibility-profile dwell 600 ms. Replace with real Fitts data. |
 | G7 Agent latency | Y | §G7 above — E1 (owner) 9router: chosen model `glm-5.2` for both fast + planner, p50 2653 ms ≤ 3 s (tool-calling Y, json_schema Y); `deepseel-v4-flash` p50 1574 ms retained as json_schema-only fast alt; E3 (agent) harness green. §8 row logged by owner |
 | G8 Inference path | | |
 
