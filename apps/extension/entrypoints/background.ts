@@ -15,7 +15,8 @@ import { type DispatchCtx, type Profile, dispatchIntent } from './background/dis
 import { type Bbox, type DebuggerApi, type PermissionsApi, createCdp } from './background/cdp';
 import { type TabsApi, createActions } from './background/actions';
 import { relayPointer } from './background/pointer';
-import { createPortRegistry, type RegistryPort } from './background/ports';
+import { createPortRegistry, type RegistryPort, type SessionStore } from './background/ports';
+import { createReinjector, type NavigationDetails, type ScriptingApi } from './background/reinject';
 
 // Service worker — control plane. It does the three things the offscreen/grant
 // APIs force here:
@@ -173,13 +174,30 @@ interface ChromeLike {
   debugger?: DebuggerApi;
   permissions?: PermissionsApi;
   tabs?: TabsApi;
+  webNavigation?: {
+    onCommitted: { addListener(cb: (details: NavigationDetails) => void): void };
+  };
+  scripting?: ScriptingApi;
 }
 function chromeApi(): ChromeLike | undefined {
   return (globalThis as { chrome?: ChromeLike }).chrome;
 }
 
+// Built content-script bundle path (apps/extension/entrypoints/content/index.ts,
+// matches <all_urls>): the manifest-declared entry re-runs on a normal
+// full-page navigation on its own; reinject.ts force-injects it only for a tab
+// whose content port is not currently live (Task 7).
+const CONTENT_SCRIPT_FILES = ['content-scripts/content.js'];
+
+// Mirrors chrome.storage.session behind ports.ts's injectable SessionStore so
+// ports.ts never imports wxt/browser itself (.claude/rules/background.md).
+const sessionStore: SessionStore = {
+  get: (keys) => browser.storage.session.get(keys),
+  set: (items) => browser.storage.session.set(items),
+};
+
 export default defineBackground(() => {
-  const ports = createPortRegistry();
+  const ports = createPortRegistry(sessionStore);
 
   // Page-side state the FSM/dispatcher read (1A is single-page: one hover, one
   // profile). `dwellEnabled` follows the profile; Standard has no dwell-click.
@@ -189,10 +207,24 @@ export default defineBackground(() => {
   const profile = (): Profile => 'standard';
 
   const cx = chromeApi();
-  const cdp = createCdp({
+  const cdpImpl = createCdp({
     debugger: cx?.debugger ?? null,
     permissions: cx?.permissions ?? null,
   });
+  // Mirror attach/detach onto the port registry's derived CDP-attach flags so
+  // they survive a SW restart (Task 7 ruling) — cdp.ts itself stays untouched
+  // (its own attached-set is the live source of truth while the worker is up).
+  const cdp: Pick<typeof cdpImpl, 'attach' | 'detach' | 'isAttached' | 'preferCdp' | 'trustedClick' | 'trustedDrag'> = {
+    ...cdpImpl,
+    async attach(tabId) {
+      await cdpImpl.attach(tabId);
+      ports.setCdpAttached(tabId, cdpImpl.isAttached(tabId));
+    },
+    async detach(tabId) {
+      await cdpImpl.detach(tabId);
+      ports.setCdpAttached(tabId, cdpImpl.isAttached(tabId));
+    },
+  };
   const actions = cx?.tabs ? createActions(cx.tabs) : null;
 
   const activeTarget = (): { target: RegistryPort | null; tabId: number | null } => {
@@ -272,6 +304,25 @@ export default defineBackground(() => {
       })();
     }
   });
+
+  // Re-inject the content script on a navigation commit for any tab whose
+  // content port is not currently live (SPA route change, or any navigation
+  // shortly after a SW restart) — Task 7.
+  if (cx?.webNavigation && cx.scripting) {
+    const reinjector = createReinjector({
+      scripting: cx.scripting,
+      hasContentPort: (tabId) => ports.hasContentPort(tabId),
+      contentScriptFiles: CONTENT_SCRIPT_FILES,
+    });
+    cx.webNavigation.onCommitted.addListener((details: NavigationDetails) =>
+      reinjector.onNavigationCommitted(details),
+    );
+  }
+
+  // Rehydrate derived state after a worker restart: which tabs had a content
+  // port (the reinjector above then re-injects them on their next navigation)
+  // and which had CDP attached. Never fabricates live Port objects.
+  void ports.restoreState();
 
   void gateThenPump();
 });

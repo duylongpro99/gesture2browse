@@ -36,7 +36,7 @@ export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
     name: 'Gesture Browser Agent',
-    permissions: ['offscreen', 'sidePanel', 'storage', 'tabs', 'scripting'],
+    permissions: ['offscreen', 'sidePanel', 'storage', 'tabs', 'scripting', 'webNavigation'],
     optional_permissions: optionalPermissions,
     host_permissions: ['<all_urls>'],
     optional_host_permissions: ['https://*/*'],
