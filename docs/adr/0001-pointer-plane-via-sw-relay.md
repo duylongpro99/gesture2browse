@@ -1,6 +1,6 @@
 # ADR 0001 — pointer plane via SW relay (PageCommand.pointer)
 
-- **Status:** proposed
+- **Status:** accepted (owner approved at the plan gate, 2026-09-12)
 - **Date:** 2026-09-12
 - **Rule broken:** `docs/02-architecture.md §3.2` design statement — "Pointer moves do not pass through the service worker: the inference Worker streams `PointerUpdate` to the content script directly" — and the `§2` diagram edge "WK → PointerUpdate @camera rate (direct runtime.Port) → CS". Not a `CLAUDE.md §1–2` hard rule nor a `.claude/rules/` line; an architecture-doc design deviation recorded under `CLAUDE.md §3` (step 4: a permanent deviation updates the architecture doc).
 
