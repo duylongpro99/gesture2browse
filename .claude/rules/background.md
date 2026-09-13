@@ -10,3 +10,4 @@ paths:
 - Validate every inbound Port / native message with the `protocol` Zod schema before acting on it.
 - Only an event from the perception pipeline or the keyboard shortcut can `confirm` a guarded action. Nothing from the companion, side panel, or page may.
 - CDP is the primary input path; content-script synthetic events are the fallback only.
+- The service worker **relays the pointer plane** to the active tab's content script as `PageCommand{pointer}` (one coalesced message per frame; ADR 0001) — it does not open a direct offscreen→CS port.
