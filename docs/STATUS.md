@@ -18,6 +18,6 @@ _Project section last updated: 2026-09-12 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| 1C | drv-1C | Execute S5: **Task 9 done** (`[docs]` `c6841eb`) — arch §2/§3.1/§3.2/§4.1 + background/protocol rules updated for accepted **ADR 0001** (SW-relay pointer plane), per CLAUDE.md §3/§5. **All 9 tasks implemented + committed; all 8 exit-check rows PASS** (E1 precision 1.000/median 409 ms; E2; E3; I1–I5). E3 owner-accepted (answer #1=A: content-plane-reload proxy + unit coverage; literal SW-kill e2e → 1E). **Milestone ready to finish** — remaining is owner-only: merge the 1C PR (carries ADR 0001 doc update) + log roadmap §8. | `docs/plans/1C.md` | 2026-09-13 |
+| 1C | drv-1C | **Finish S6: PR open to `master`.** Re-verified from clean state: `tsc`/lint/boundary-lint clean, unit tests pass (extension 79, playground 22), `exit-check 1C` (full) = **8 PASS 0 FAIL**, lock OK. All 9 tasks merged into branch `1C` (24 commits); E1 precision 1.000/median 409 ms, E2, E3 (owner-accepted proxy), I1–I5 all PASS. **Owner-only to close:** merge the PR (carries ADR 0001 arch/rule doc update) + log the two drafted roadmap §8 rows (plan `## Status`), then remove this STATUS row. | `docs/plans/1C.md` | 2026-09-13 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
