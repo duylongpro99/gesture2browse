@@ -4,6 +4,10 @@ import { normalizeLandmarks } from './normalize.js';
 import { KnnClassifier, type Classifier } from './classifier.js';
 import { createGestureMachine, type FrameInput } from './machine.js';
 
+// Every Intent the machine emits (1A: Arm/Pause/Scroll; 1C: the action gestures).
+// Subscribed to so replays surface them all, not just the 1A trio.
+const INTENT_TYPES = ['Arm', 'Pause', 'Scroll', 'Click', 'DragStart', 'DragEnd', 'Swipe', 'HoldGesture'] as const;
+
 // Render an XState state value as a dotted path: a string returns itself; an
 // object returns `${key}.${dot(value[key])}` for its single active key (the
 // hierarchical states this machine uses never have parallel regions).
@@ -27,9 +31,7 @@ export interface GestureRunner {
 export function createGestureRunner(): GestureRunner {
   const actor = createActor(createGestureMachine());
   let buffered: Intent[] = [];
-  actor.on('Arm', (e) => buffered.push(e));
-  actor.on('Pause', (e) => buffered.push(e));
-  actor.on('Scroll', (e) => buffered.push(e));
+  for (const t of INTENT_TYPES) actor.on(t, (e) => buffered.push(e as Intent));
   actor.start();
 
   return {
@@ -71,9 +73,7 @@ export function replayFrames(frames: FrameInput[]): { intents: Intent[]; transit
 export function replayFixtureWith(record: FixtureRecord, classifier: Classifier): Intent[] {
   const intents: Intent[] = [];
   const actor = createActor(createGestureMachine());
-  actor.on('Arm', (e) => intents.push(e));
-  actor.on('Pause', (e) => intents.push(e));
-  actor.on('Scroll', (e) => intents.push(e));
+  for (const t of INTENT_TYPES) actor.on(t, (e) => intents.push(e as Intent));
   actor.start();
 
   let prevWristY: number | null = null;

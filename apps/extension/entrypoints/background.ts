@@ -11,8 +11,12 @@ import {
 } from '@gesture/protocol';
 import { deriveGrant } from './grant-camera/permission';
 import { createFrameConsumer } from './background/fsm';
-import { dispatchIntent } from './background/dispatcher';
-import { createPortRegistry, type RegistryPort } from './background/ports';
+import { type DispatchCtx, type Profile, dispatchIntent } from './background/dispatcher';
+import { type Bbox, type DebuggerApi, type PermissionsApi, createCdp } from './background/cdp';
+import { type TabsApi, createActions } from './background/actions';
+import { relayPointer } from './background/pointer';
+import { createPortRegistry, type RegistryPort, type SessionStore } from './background/ports';
+import { createReinjector, type NavigationDetails, type ScriptingApi } from './background/reinject';
 
 // Service worker — control plane. It does the three things the offscreen/grant
 // APIs force here:
@@ -162,11 +166,97 @@ async function gateThenPump(): Promise<void> {
   if (!result.openedGrantTab) await ensureOffscreen();
 }
 
+// The real chrome.* APIs the 1C control plane needs, kept behind the injected
+// interfaces the pure modules consume (background.ts is the only place that
+// touches chrome.*). No @types/chrome in the repo, so read the loosely-typed
+// global and cast to those interfaces; the shapes match MV3's promise APIs.
+interface ChromeLike {
+  debugger?: DebuggerApi;
+  permissions?: PermissionsApi;
+  tabs?: TabsApi;
+  webNavigation?: {
+    onCommitted: { addListener(cb: (details: NavigationDetails) => void): void };
+  };
+  scripting?: ScriptingApi;
+}
+function chromeApi(): ChromeLike | undefined {
+  return (globalThis as { chrome?: ChromeLike }).chrome;
+}
+
+// Built content-script bundle path (apps/extension/entrypoints/content/index.ts,
+// matches <all_urls>): the manifest-declared entry re-runs on a normal
+// full-page navigation on its own; reinject.ts force-injects it only for a tab
+// whose content port is not currently live (Task 7).
+const CONTENT_SCRIPT_FILES = ['content-scripts/content.js'];
+
+// Mirrors chrome.storage.session behind ports.ts's injectable SessionStore so
+// ports.ts never imports wxt/browser itself (.claude/rules/background.md).
+const sessionStore: SessionStore = {
+  get: (keys) => browser.storage.session.get(keys),
+  set: (items) => browser.storage.session.set(items),
+};
+
 export default defineBackground(() => {
-  const ports = createPortRegistry();
+  const ports = createPortRegistry(sessionStore);
+
+  // Page-side state the FSM/dispatcher read (1A is single-page: one hover, one
+  // profile). `dwellEnabled` follows the profile; Standard has no dwell-click.
+  // Profile is a getter so 1D can swap in real switching without touching the
+  // wiring; Standard is the only 1C profile.
+  let lastHover: { id: number | null; bbox?: Bbox } = { id: null };
+  const profile = (): Profile => 'standard';
+
+  const cx = chromeApi();
+  const cdpImpl = createCdp({
+    debugger: cx?.debugger ?? null,
+    permissions: cx?.permissions ?? null,
+  });
+  // Mirror attach/detach onto the port registry's derived CDP-attach flags so
+  // they survive a SW restart (Task 7 ruling) — cdp.ts itself stays untouched
+  // (its own attached-set is the live source of truth while the worker is up).
+  const cdp: Pick<typeof cdpImpl, 'attach' | 'detach' | 'isAttached' | 'preferCdp' | 'trustedClick' | 'trustedDrag'> = {
+    ...cdpImpl,
+    async attach(tabId) {
+      await cdpImpl.attach(tabId);
+      ports.setCdpAttached(tabId, cdpImpl.isAttached(tabId));
+    },
+    async detach(tabId) {
+      await cdpImpl.detach(tabId);
+      ports.setCdpAttached(tabId, cdpImpl.isAttached(tabId));
+    },
+  };
+  const actions = cx?.tabs ? createActions(cx.tabs) : null;
+
+  const activeTarget = (): { target: RegistryPort | null; tabId: number | null } => {
+    const target = ports.currentContentTarget();
+    return { target, tabId: target?.sender?.tab?.id ?? null };
+  };
+
+  // One reused DispatchCtx so per-gesture state (a CDP drag's start bbox)
+  // survives across intents; target/tabId are refreshed before each dispatch.
+  const dispatchCtx: DispatchCtx = {
+    target: null,
+    tabId: null,
+    cdp,
+    actions: actions ?? { back: async () => {}, forward: async () => {} },
+    hover: () => lastHover,
+    profile,
+  };
+
   const consumer = createFrameConsumer({
-    dispatch: (intent) => dispatchIntent(intent, ports.currentContentTarget()),
+    dispatch: (intent) => {
+      const { target, tabId } = activeTarget();
+      dispatchCtx.target = target;
+      dispatchCtx.tabId = tabId;
+      void dispatchIntent(intent, dispatchCtx);
+    },
     persist: persistTransitions,
+    hover: () => lastHover.id,
+    dwellEnabled: () => profile() === 'accessibility',
+    relay: (frame, fsmState) => {
+      const { target } = activeTarget();
+      if (target) relayPointer(frame, fsmState, (c) => target.postMessage(c), { id: lastHover.id });
+    },
   });
 
   browser.runtime.onConnect.addListener((port: RegistryPort) => {
@@ -180,8 +270,12 @@ export default defineBackground(() => {
     } else if (port.name === PortName.ServiceWorkerToContent) {
       ports.registerContent(port);
       port.onMessage.addListener((message: unknown) => {
-        // 1A's only inbound PageEvent is `ready`; validate before acting.
-        PageEventSchema.safeParse(message);
+        // Inbound PageEvents: `ready` (1A), `hover`/`snapshot` (1C). Validate
+        // before acting; the page is hostile. `hover` feeds the FSM + dispatcher;
+        // `snapshot` is 2A's a11y consumer (no 1C SW action).
+        const parsed = PageEventSchema.safeParse(message);
+        if (!parsed.success) return;
+        if (parsed.data.type === 'hover') lastHover = { id: parsed.data.id, bbox: parsed.data.bbox };
       });
     }
   });
@@ -209,6 +303,34 @@ export default defineBackground(() => {
         }
       })();
     }
+  });
+
+  // Re-injection (Task 7): on a navigation commit for any tab whose content
+  // port is not currently live (SPA route change, or a navigation shortly
+  // after a SW restart), AND proactively at startup for any tab that had a
+  // content port before the restart and has not reconnected on its own (a tab
+  // that never navigates again must still recover — E3).
+  const reinjector = cx?.scripting
+    ? createReinjector({
+        scripting: cx.scripting,
+        hasContentPort: (tabId) => ports.hasContentPort(tabId),
+        contentScriptFiles: CONTENT_SCRIPT_FILES,
+      })
+    : null;
+  if (reinjector && cx?.webNavigation) {
+    cx.webNavigation.onCommitted.addListener((details: NavigationDetails) =>
+      reinjector.onNavigationCommitted(details),
+    );
+  }
+
+  // Rehydrate derived state after a worker restart: which tabs had a content
+  // port and which had CDP attached (isAttached is informational/diagnostic
+  // here — the dispatcher re-attaches CDP on the tab's next Arm rather than
+  // reading it back). Never fabricates live Port objects. The restored
+  // content-tab set then drives the proactive re-injection above so recovery
+  // does not depend on the tab navigating again.
+  void ports.restoreState().then((restored) => {
+    reinjector?.reinjectMissing(restored.contentTabs);
   });
 
   void gateThenPump();

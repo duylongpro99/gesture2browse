@@ -18,5 +18,6 @@ _Project section last updated: 2026-09-12 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
+| 1C | drv-1C | **Finish S6: PR open to `master`.** Re-verified from clean state: `tsc`/lint/boundary-lint clean, unit tests pass (extension 79, playground 22), `exit-check 1C` (full) = **8 PASS 0 FAIL**, lock OK. All 9 tasks merged into branch `1C` (24 commits); E1 precision 1.000/median 409 ms, E2, E3 (owner-accepted proxy), I1–I5 all PASS. **Owner-only to close:** merge the PR (carries ADR 0001 arch/rule doc update) + log the two drafted roadmap §8 rows (plan `## Status`), then remove this STATUS row. | `docs/plans/1C.md` | 2026-09-13 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).

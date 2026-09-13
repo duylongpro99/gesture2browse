@@ -25,8 +25,8 @@ flowchart LR
     SP["Side panel (React)<br/>Status HUD · Suggestions · Agent log · Settings · Calibration"]
     DBG["chrome.debugger → CDP<br/>Input.dispatchMouseEvent / KeyEvent · Page.captureScreenshot"]
     OFF -- "transferred ReadableStream&lt;VideoFrame&gt;" --> WK
-    WK -- "PointerUpdate @camera rate<br/>(direct runtime.Port)" --> CS
-    WK -- "discrete Intents / GestureFrame<br/>(runtime.Port)" --> SW
+    WK -- "discrete Intents / GestureFrame (incl. pointer)<br/>(runtime.Port)" --> SW
+    SW -- "PageCommand{pointer} @frame rate (ADR 0001)" --> CS
     CS -- "InteractableIndex / HitTest / A11ySnapshot" --> SW
     SW -- "trusted input (trusted-click mode only)" --> DBG
     SW <-- "state, suggestions, commands" --> SP
@@ -76,7 +76,7 @@ inference Worker (OffscreenCanvas):
     → Derived features: pinch distance (4↔8) / dist(0,9), finger extension flags, wrist velocity, hand bbox scale
     → Pointer = landmark 8 (index tip) mapped from calibrated active box → viewport [0,1]²
     → GestureFrame { ts, present, handedness, gesture, score, pinch, features, pointer, raw landmarks? }
-    → runtime.Port: PointerUpdate direct to the content script (@camera rate); discrete Intents / GestureFrame to the service worker
+    → runtime.Port: discrete Intents / GestureFrame (pointer included) to the service worker only  // ADR 0001: no direct-to-content-script pointer port; SW relays pointer as PageCommand
 ```
 
 Notes:
@@ -92,7 +92,7 @@ Responsibilities: gesture state machine, policy, mapping gestures to actions, ta
 
 - **Gesture state machine** (XState): consumes `GestureFrame`s, emits `Intent`s. States: `Paused`, `Armed.Idle`, `Armed.Pointing`, `Armed.PinchDown`, `Armed.Dragging`, `Armed.Scrolling`, `Armed.SwipeArmed`, `Armed.HoldGesture(kind)`, `Agent.Proposing`, `Agent.AwaitingConfirm`. Hold timers, cooldowns, and hysteresis live here, not in the recognizer. Event-sourced: every transition is logged for diagnostics and replay tests.
 - **Action mapper**: `Intent × Profile → Action`. Profiles: Accessibility, Standard, Presenter; user overrides stored in `chrome.storage.sync`.
-- **Action dispatcher**: executes `Action`s. `click`/`drag`/`key` default to **content-script synthetic events**; CDP `Input.*` is used only in trusted-click mode or when the target needs user activation (attaches per gesture session, detaches on pause). `scroll` → content-script `scrollBy` with inertia (or CDP `Input.dispatchMouseEvent(type=mouseWheel)` in trusted mode); `history.back/forward`, `tabs.*`, `zoom` → chrome APIs. Pointer moves do not pass through the service worker: the inference Worker streams `PointerUpdate` to the content script directly.
+- **Action dispatcher**: executes `Action`s. `click`/`drag`/`key` default to **content-script synthetic events**; CDP `Input.*` is used only in trusted-click mode or when the target needs user activation (attaches per gesture session, detaches on pause). `scroll` → content-script `scrollBy` with inertia (or CDP `Input.dispatchMouseEvent(type=mouseWheel)` in trusted mode); `history.back/forward`, `tabs.*`, `zoom` → chrome APIs. Pointer moves are routed through the service worker: the SW forwards `GestureFrame.pointer` to the active tab's content script as a `PageCommand` `{type:'pointer',x,y,state:CursorState}`, one coalesced message per frame, over the frozen `ServiceWorkerToContent` port — per **ADR 0001** (`docs/adr/0001-pointer-plane-via-sw-relay.md`). The architecture-conforming direct offscreen→content-script `MessagePort` remains **reserved for a later perf milestone**: it is blocked today because `chrome.runtime`/`chrome.tabs` structured-clone messaging cannot transfer a `MessagePort`, and the offscreen document has no `chrome.tabs` to address a content script directly.
 - **Tab registry**: tracks active tab, iframe frames, and whether the content script is alive; re-injects on SPA route change if needed.
 - **Policy engine**: site allow/deny for agent; guarded-action classification; kill switch fan-out.
 - **Keep-alive and state**: the service worker is **stateless** — session state lives in `chrome.storage.session`, reconnecting on `onDisconnect`. MV3 workers idle out after 30 s; the open runtime Port from the offscreen document (carrying discrete intents) resets the timer while tracking is armed, and `chrome.alarms` handles reconnection. Ports are not treated as an indefinite keep-alive.
@@ -140,7 +140,7 @@ sequenceDiagram
   Cam->>Off: frame (33 ms cadence)
   Off->>Off: landmarks → features → 1€ filter
   Off->>SW: GestureFrame{pointer, pinch=0.9, gesture=None}
-  SW->>CS: PointerUpdate{x,y}
+  SW->>CS: PageCommand{pointer x,y}
   CS->>CS: snap to nearest interactable (id 17, "Sign in" button)
   CS-->>SW: HoverTarget{id:17, bbox}
   Off->>SW: GestureFrame{pinch=0.18}  (below pinch-in threshold)

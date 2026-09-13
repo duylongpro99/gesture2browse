@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>click-count fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: sans-serif;
+      }
+      #target {
+        width: 200px;
+        height: 90px;
+        font-size: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      // Fixture for dispatch-count.e2e.ts (and reused by sw-recovery.e2e.ts). A
+      // single centred interactable that counts landed clicks split by
+      // event.isTrusted: the service worker's CDP path produces trusted clicks
+      // (isTrusted === true), the content-script synthetic fallback produces
+      // untrusted ones (isTrusted === false). The e2e drives the pinch-tap
+      // gesture and reads `window.__clicks` back. isTrusted is the browser's own
+      // flag, never set by the fixture.
+      (() => {
+        const clicks = { trusted: 0, synthetic: 0, last: null };
+        window.__clicks = clicks;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'target';
+        btn.textContent = 'target';
+        btn.setAttribute('aria-label', 'click-target');
+        btn.addEventListener('click', (e) => {
+          if (e.isTrusted) clicks.trusted += 1;
+          else clicks.synthetic += 1;
+          clicks.last = { isTrusted: e.isTrusted };
+        });
+        document.body.appendChild(btn);
+      })();
+    </script>
+  </body>
+</html>
