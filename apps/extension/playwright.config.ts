@@ -29,5 +29,10 @@ export default defineConfig({
     { name: 'camera-grant', testMatch: '**/camera-grant.e2e.ts' },
     { name: 'scroll-slice', testMatch: '**/scroll-slice.e2e.ts' },
     { name: 'adaptive-fps', testMatch: '**/adaptive-fps.e2e.ts' },
+    // 1C page-control plane e2e (Task 8): E1 Fitts, trusted-vs-synthetic click
+    // dispatch, and E3 SW-kill recovery.
+    { name: 'fitts', testMatch: '**/fitts.e2e.ts' },
+    { name: 'dispatch-count', testMatch: '**/dispatch-count.e2e.ts' },
+    { name: 'sw-recovery', testMatch: '**/sw-recovery.e2e.ts' },
   ],
 });

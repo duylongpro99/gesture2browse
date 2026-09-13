@@ -1,10 +1,16 @@
 /// <reference types="vite/client" />
-import { browser } from 'wxt/browser';
-import type { PumpStat, GestureFrame } from '@gesture/protocol';
+
+import type { GestureFrame, PumpStat } from '@gesture/protocol';
 import { PortName } from '@gesture/protocol';
-import InferenceWorker from './inference.worker?worker';
+import { browser } from 'wxt/browser';
 import type { StartPump, WorkerMsg } from './inference.worker';
-import { shouldRestart, recordRestart, DEFAULT_RESTART_PARAMS, type RestartState } from './lifecycle';
+import InferenceWorker from './inference.worker?worker';
+import {
+  DEFAULT_RESTART_PARAMS,
+  type RestartState,
+  recordRestart,
+  shouldRestart,
+} from './lifecycle';
 
 // Offscreen document — owner of the camera and the G1 frame pump. It opens the
 // camera, wires getUserMedia -> MediaStreamTrackProcessor -> a transferred
@@ -37,8 +43,49 @@ const MODEL_URL = new URL('models/hand_landmarker.task', origin).href;
 const WEIGHTS_URL = new URL('models/gesture-mlp.json', origin).href;
 
 // Long-lived Port to the service worker carrying discrete GestureFrames (arch
-// §3.1/§3.2). Opened once at document load, independent of pump start/stop.
-const swPort = browser.runtime.connect({ name: PortName.OffscreenToServiceWorker });
+// §3.1/§3.2). Opened at document load, independent of pump start/stop.
+//
+// The service worker can be torn down and respawned (MV3 idle eviction, crash,
+// or the E3 SW-kill recovery check); the offscreen document outlives it, so this
+// bare port would go dead and GestureFrames would silently stop flowing after a
+// restart. Re-establish it on disconnect (a `connect` also wakes a stopped
+// worker), rate-limited so a persistently-dead worker cannot spin a tight connect
+// loop. This is a lifecycle throttle (like lifecycle.ts's restart interval), not
+// gesture timing. Every reader below references the mutable `swPort`, so the
+// frame-push and the test-only injection hook both follow the reconnected port.
+// This stays within .claude/rules/offscreen.md: still only a GestureFrame Port,
+// no new deps, no gesture timing, no video/frame export.
+const RECONNECT_DELAY_MS = 250;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let swPort = browser.runtime.connect({
+  name: PortName.OffscreenToServiceWorker,
+});
+
+function bindSwReconnect(
+  port: ReturnType<typeof browser.runtime.connect>,
+): void {
+  port.onDisconnect.addListener(() => {
+    if (reconnectTimer !== null) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      swPort = browser.runtime.connect({
+        name: PortName.OffscreenToServiceWorker,
+      });
+      bindSwReconnect(swPort);
+    }, RECONNECT_DELAY_MS);
+  });
+}
+bindSwReconnect(swPort);
+
+// Test-only: once a Playwright test starts injecting synthetic frames through the
+// `__inject_frames` hook below, the live perception stream is suppressed so the
+// injected frames are the FSM's sole, DETERMINISTIC input — which is the whole
+// point of that hook. Otherwise the live ~16fps `present:false` frames from the
+// hand-less fake camera compete for the single shared FSM (their `pinch: 0`
+// spuriously fires pinch/drag once armed), making a scripted click impossible.
+// Never set in production: only the VITE_TEST_HOOKS block sets it, so the guard
+// on the live frame push below is a constant no-op in a `wxt build`.
+let suppressLiveFrames = false;
 
 // The currently-running worker/stream/track, held here so the restart path
 // (below) can tear them down before re-acquiring the camera. Set once
@@ -80,7 +127,13 @@ async function startPump(): Promise<void> {
 
   const worker = new InferenceWorker();
   const onEnded = () => handleStreamEnd(handle);
-  const handle: PumpHandle = { worker, stream, track, onEnded, restarted: false };
+  const handle: PumpHandle = {
+    worker,
+    stream,
+    track,
+    onEnded,
+    restarted: false,
+  };
   current = handle;
 
   worker.onmessage = (ev: MessageEvent<WorkerMsg>) => {
@@ -98,7 +151,7 @@ async function startPump(): Promise<void> {
     } else if (m.type === 'error') {
       void browser.runtime.sendMessage({ type: 'PumpError', error: m.error });
     } else if (m.type === 'frame') {
-      swPort.postMessage(m.frame);
+      if (!suppressLiveFrames) swPort.postMessage(m.frame);
     } else if (m.type === 'streamEnded') {
       handleStreamEnd(handle);
     }
@@ -159,7 +212,8 @@ function handleStreamEnd(handle: PumpHandle): void {
 
   void browser.runtime.sendMessage({
     type: 'PumpError',
-    error: 'camera stream ended repeatedly; restart guard refused (restart storm), retrying shortly',
+    error:
+      'camera stream ended repeatedly; restart guard refused (restart storm), retrying shortly',
   });
   teardown(handle);
   scheduleRetry();
@@ -199,6 +253,9 @@ if (import.meta.env.VITE_TEST_HOOKS === '1') {
   browser.runtime.onMessage.addListener((message: unknown) => {
     const m = message as Partial<InjectFrames> | undefined;
     if (m?.type !== '__inject_frames' || !Array.isArray(m.frames)) return;
+    // From the first injection on, the live perception stream must not compete
+    // with the scripted frames for the shared FSM (see `suppressLiveFrames`).
+    suppressLiveFrames = true;
     for (const frame of m.frames) swPort.postMessage(frame);
   });
 }
