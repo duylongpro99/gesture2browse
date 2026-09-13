@@ -140,7 +140,7 @@ sequenceDiagram
   Cam->>Off: frame (33 ms cadence)
   Off->>Off: landmarks → features → 1€ filter
   Off->>SW: GestureFrame{pointer, pinch=0.9, gesture=None}
-  SW->>CS: PointerUpdate{x,y}
+  SW->>CS: PageCommand{pointer x,y}
   CS->>CS: snap to nearest interactable (id 17, "Sign in" button)
   CS-->>SW: HoverTarget{id:17, bbox}
   Off->>SW: GestureFrame{pinch=0.18}  (below pinch-in threshold)
