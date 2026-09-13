@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>fitts fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        position: relative;
+        font-family: sans-serif;
+      }
+      .target {
+        position: absolute;
+        box-sizing: border-box;
+        width: 40px;
+        height: 40px;
+        border: 1px solid #333;
+        background: #ddd;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      // Fitts fixture for E1. A 9-target ring of 40 px interactables; the e2e
+      // reads each target's live viewport-fraction centre, then for each target
+      // marks it active and drives a scripted pinch-tap gesture that clicks it.
+      // `window.__fitts` records, per landed click, the intended (active) target,
+      // the timestamp it became active and the timestamp of the click, plus a
+      // hit/miss flag (hit = the clicked target is the active one). The e2e reads
+      // this back and asserts median acquisition (clickTs - activeTs) <= 1.8 s and
+      // precision (hits / attempts) >= 0.95 (roadmap §4.6). Timestamps are the
+      // fixture's own performance.now(); the gesture timing itself lives in
+      // gesture-core (no timing constant appears here).
+      (() => {
+        const COUNT = 9;
+        const cx = window.innerWidth / 2;
+        const cy = window.innerHeight / 2;
+        const ringRadius = Math.min(window.innerWidth, window.innerHeight) * 0.3;
+        const HALF = 20; // half of the 40 px target box
+
+        const fitts = {
+          active: null,
+          activeTs: 0,
+          records: [],
+          activate(i) {
+            this.active = i;
+            this.activeTs = performance.now();
+          },
+        };
+        window.__fitts = fitts;
+
+        for (let i = 0; i < COUNT; i += 1) {
+          const angle = (i / COUNT) * 2 * Math.PI;
+          const left = cx + ringRadius * Math.cos(angle) - HALF;
+          const top = cy + ringRadius * Math.sin(angle) - HALF;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'target';
+          btn.dataset.index = String(i);
+          btn.setAttribute('aria-label', `target-${i}`);
+          btn.style.left = `${left}px`;
+          btn.style.top = `${top}px`;
+          btn.addEventListener('click', (e) => {
+            const idx = Number(btn.dataset.index);
+            fitts.records.push({
+              index: idx,
+              intended: fitts.active,
+              activeTs: fitts.activeTs,
+              clickTs: performance.now(),
+              isTrusted: e.isTrusted,
+              hit: idx === fitts.active,
+            });
+          });
+          document.body.appendChild(btn);
+        }
+      })();
+    </script>
+  </body>
+</html>
