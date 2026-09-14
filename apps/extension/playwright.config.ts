@@ -37,5 +37,9 @@ export default defineConfig({
     // 1D.5 diagnostics page e2e (Task 7): exit checks E1 (owner screenshot) + E2
     // (settings round-trip through chrome.storage validated by the protocol schema).
     { name: 'diagnostics', testMatch: '**/diagnostics.e2e.ts' },
+    // 1D.1 onboarding page e2e (Task 5): exit checks E1 (owner screenshot) + E2
+    // (settings round-trip through chrome.storage validated by the protocol schema),
+    // plus the keyboard/aria path and the required unhappy paths.
+    { name: 'onboarding', testMatch: '**/onboarding.e2e.ts' },
   ],
 });
