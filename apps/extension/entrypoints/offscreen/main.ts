@@ -146,6 +146,8 @@ async function startPump(): Promise<void> {
         windowMs: m.windowMs,
         delegate: m.delegate,
         hidden: document.hidden, // offscreen documents are always hidden — the gate condition
+        ...(m.stages ? { stages: m.stages } : {}), // 1D.5: per-stage timings (omitted if window empty)
+        dropped: m.dropped, // 1D.5: dropped-frame count in the window
       };
       void browser.runtime.sendMessage({ type: 'PumpStat', stat });
     } else if (m.type === 'error') {

@@ -1,9 +1,10 @@
-import type { Delegate, GestureFrame } from '@gesture/protocol';
+import type { Delegate, GestureFrame, StageTimings } from '@gesture/protocol';
 import { KnnClassifier, type Classifier } from '@gesture/gesture-core';
 import { createHandLandmarker, recreateHandLandmarker, reportFrameCostMs, type MediaPipeInit } from './mediapipe';
 import { classifierFromWeights } from './classifier-select';
 import { FpsLogger } from './fps-logger';
-import { createGestureFrameSource } from './gesture-frame';
+import { createGestureFrameSource, type DeriveTimings } from './gesture-frame';
+import { StageTimer } from './stage-timer';
 import { shouldInfer, DEFAULT_FPS_POLICY_PARAMS, type FpsPolicyState } from './fps-policy';
 
 // G1 inference worker. It consumes the transferred ReadableStream<VideoFrame>,
@@ -29,7 +30,16 @@ export interface StartPump {
 export type WorkerMsg =
   | { type: 'ready'; delegate: Delegate }
   | { type: 'error'; error: string }
-  | { type: 'stat'; ts: number; fps: number; frames: number; windowMs: number; delegate: Delegate }
+  | {
+      type: 'stat';
+      ts: number;
+      fps: number;
+      frames: number;
+      windowMs: number;
+      delegate: Delegate;
+      stages?: StageTimings; // 1D.5: per-stage median over the window (undefined if empty)
+      dropped: number; // 1D.5: frames read but not inferred within the window
+    }
   | { type: 'frame'; frame: GestureFrame }
   | { type: 'streamEnded' };
 
@@ -124,6 +134,7 @@ async function run(msg: StartPump): Promise<void> {
 
   const classifier = await loadClassifier(msg.weightsUrl);
   const log = new FpsLogger(msg.windowMs);
+  const stageTimer = new StageTimer(msg.windowMs);
   const gestureFrames = createGestureFrameSource(classifier);
   const reader = msg.stream.getReader();
   let sized = false;
@@ -147,7 +158,12 @@ async function run(msg: StartPump): Promise<void> {
       canvas.height = frame.displayHeight;
       sized = true;
     }
+    // captureMs = the cost of drawing this camera frame onto the inference
+    // canvas (diagnostics stage timing, 1D.5). Measured every read; recorded on
+    // the StageTimer only for frames we actually infer below.
+    const captureStart = performance.now();
     draw.drawImage(frame, 0, 0);
+    const captureMs = performance.now() - captureStart;
     // Every camera frame is read and closed here regardless of the fps
     // policy's decision below — we never leak a VideoFrame or let the
     // stream backpressure on a skipped inference.
@@ -174,14 +190,22 @@ async function run(msg: StartPump): Promise<void> {
       } catch {
         // A single detect failure must not stall the pump; keep measuring delivery.
       }
-      reportFrameCostMs(delegate, performance.now() - detectStart);
+      const inferMs = performance.now() - detectStart;
+      reportFrameCostMs(delegate, inferMs);
 
-      ctx.postMessage({ type: 'frame', frame: gestureFrames.next(flatLandmarks, now) } satisfies WorkerMsg);
+      const derive: DeriveTimings = { normalizeMs: 0, classifyMs: 0, filterMs: 0 };
+      ctx.postMessage({ type: 'frame', frame: gestureFrames.next(flatLandmarks, now, derive) } satisfies WorkerMsg);
       log.mark(now);
+      stageTimer.record(now, { captureMs, inferMs, ...derive });
+    } else {
+      // Read but not inferred (fps-policy skip or a lost GL context): a dropped
+      // frame for the diagnostics dropped-frame count.
+      stageTimer.drop();
     }
 
     if (now - lastEmit >= msg.windowMs) {
       const w = log.sample(now);
+      const s = stageTimer.sample(now);
       ctx.postMessage({
         type: 'stat',
         ts: now,
@@ -189,6 +213,8 @@ async function run(msg: StartPump): Promise<void> {
         frames: w.frames,
         windowMs: w.windowMs,
         delegate,
+        stages: s.stages,
+        dropped: s.dropped,
       } satisfies WorkerMsg);
       lastEmit = now;
     }
