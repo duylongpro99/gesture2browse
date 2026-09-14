@@ -95,8 +95,9 @@ if [ -n "$changed" ]; then
   done <<< "$changed"
 fi
 [ "$bad" = 1 ] || echo "paths: all $(printf '%s\n' "$changed" | awk 'NF' | wc -l | tr -d ' ') changed paths inside the scope"
-# Commit convention: every commit since base carries a `[component] task N` body
-# line (or `[docs]` for the session-end writes), names a task the scope contains,
+# Commit convention: every commit since base carries a `[component] task N`
+# subject line (or `[docs]` for the session-end writes) — placement is on the
+# subject per CLAUDE.md §4 and all of master — names a task the scope contains,
 # and touches the exact Files of at most one task.
 task_of() { # $1 = path → task numbers whose exact Files list contains it
   jq -r --arg p "$1" '.tasks[] | select(.files | index($p)) | .n' .claude/scope.json | tr '\n' ' '
@@ -104,9 +105,9 @@ task_of() { # $1 = path → task numbers whose exact Files list contains it
 scope_tasks=$(jq -r '.tasks | map(.n) | join(" ")' .claude/scope.json)
 for c in $(git rev-list --reverse "$base..HEAD"); do
   short=$(git rev-parse --short "$c")
-  body1=$(git log -1 --format='%b' "$c" | awk 'NF{print; exit}')
+  body1=$(git log -1 --format='%s' "$c")
   if ! printf '%s' "$body1" | grep -Eq '^\[[a-z0-9-]+\]'; then
-    echo "COMMIT-CHECK: $short body first line is not '[component] task N: …' (got: ${body1:-<empty>})"
+    echo "COMMIT-CHECK: $short subject is not '[component] task N: …' (got: ${body1:-<empty>})"
   fi
   tn=$(printf '%s' "$body1" | grep -oE 'task [0-9]+(\.[0-9]+)?' | grep -oE '[0-9]+(\.[0-9]+)?' | head -1 || true)
   if [ -n "$tn" ] && [ -n "$scope_tasks" ]; then
