@@ -5,11 +5,21 @@ import {
   GestureFrameSchema,
   PageEventSchema,
   PortName,
+  TransitionLogEntrySchema,
+  DiagnosticsConfigSchema,
   type PumpStat,
   type CameraPermissionState,
   type TransitionLogEntry,
+  type FalsePositiveEntry,
 } from '@gesture/protocol';
 import { deriveGrant } from './grant-camera/permission';
+import {
+  DiagnosticsRecorder,
+  appendBounded,
+  parseFlagFalsePositive,
+  DEFAULT_MAX_FALSE_POSITIVES,
+  type FlagFalsePositiveRequest,
+} from './background/diagnostics';
 import { createFrameConsumer } from './background/fsm';
 import { type DispatchCtx, type Profile, dispatchIntent } from './background/dispatcher';
 import { type Bbox, type DebuggerApi, type PermissionsApi, createCdp } from './background/cdp';
@@ -38,6 +48,8 @@ const PRECHECK_KEY = 'cameraPrecheck';
 const SEEN_KEY = 'cameraGrantSeen';
 const TRANSITION_SERIES_KEY = 'transitionSeries';
 const TRANSITION_LATEST_KEY = 'transitionLatest';
+const FALSE_POSITIVE_SERIES_KEY = 'falsePositiveSeries';
+const DIAGNOSTICS_CONFIG_KEY = 'diagnosticsConfig';
 
 // Diagnostic-only (arch §3.2 / 1D.5): appends the FSM's per-frame transition
 // entries to a bounded chrome.storage.session series, reusing the same
@@ -55,6 +67,39 @@ async function persistTransitions(entries: TransitionLogEntry[]): Promise<void> 
     [TRANSITION_LATEST_KEY]: entries[entries.length - 1],
     [TRANSITION_SERIES_KEY]: series,
   });
+}
+
+// Diagnostic-only (1D.5, Task 4): append one owner-annotated false positive to a
+// bounded chrome.storage.session series (same bounding as record()/
+// persistTransitions above). Feature/landmark windows only — not a secret
+// (.claude/rules/background.md).
+async function persistFalsePositive(entry: FalsePositiveEntry): Promise<void> {
+  const cur = await browser.storage.session.get([FALSE_POSITIVE_SERIES_KEY]);
+  const series: FalsePositiveEntry[] = Array.isArray(cur[FALSE_POSITIVE_SERIES_KEY])
+    ? (cur[FALSE_POSITIVE_SERIES_KEY] as FalsePositiveEntry[])
+    : [];
+  appendBounded(series, entry, DEFAULT_MAX_FALSE_POSITIVES);
+  await browser.storage.session.set({ [FALSE_POSITIVE_SERIES_KEY]: series });
+}
+
+// Build a FalsePositiveEntry from the recorder's current windows plus the last
+// persisted FSM transition, and persist it. The event ts defaults to the newest
+// buffered frame when the page did not name one.
+async function flagFalsePositive(
+  recorder: DiagnosticsRecorder,
+  req: FlagFalsePositiveRequest,
+): Promise<void> {
+  const latest = (await browser.storage.session.get([TRANSITION_LATEST_KEY]))[TRANSITION_LATEST_KEY];
+  const parsed = TransitionLogEntrySchema.safeParse(latest);
+  const transition = parsed.success ? parsed.data : undefined;
+  const eventTs = req.eventTs ?? recorder.frameWindow().at(-1)?.ts ?? performance.now();
+  const entry = recorder.buildFalsePositive({
+    ts: performance.now(),
+    eventTs,
+    ...(req.note !== undefined ? { note: req.note } : {}),
+    ...(transition ? { transition } : {}),
+  });
+  await persistFalsePositive(entry);
 }
 
 async function ensureOffscreen(): Promise<void> {
@@ -199,6 +244,10 @@ const sessionStore: SessionStore = {
 export default defineBackground(() => {
   const ports = createPortRegistry(sessionStore);
 
+  // 1D.5 diagnostics recorder: rolling feature/landmark windows over the frames
+  // the SW already receives, snapshotted into a FalsePositiveEntry on demand.
+  const diagnostics = new DiagnosticsRecorder();
+
   // Page-side state the FSM/dispatcher read (1A is single-page: one hover, one
   // profile). `dwellEnabled` follows the profile; Standard has no dwell-click.
   // Profile is a getter so 1D can swap in real switching without touching the
@@ -266,6 +315,7 @@ export default defineBackground(() => {
         const parsed = GestureFrameSchema.safeParse(message);
         if (!parsed.success) return; // page/offscreen is hostile; ignore malformed frames.
         consumer.push(parsed.data);
+        diagnostics.observe(parsed.data); // 1D.5: feed the rolling diagnostics windows
       });
     } else if (port.name === PortName.ServiceWorkerToContent) {
       ports.registerContent(port);
@@ -290,6 +340,24 @@ export default defineBackground(() => {
     } else if (type === 'PumpError') {
       // Surface pipeline init/read failures for diagnostics (E2, spike-results).
       void browser.storage.session.set({ pumpError: String((msg as { error?: unknown }).error) });
+    } else if (type === 'FlagFalsePositive') {
+      // Owner tapped "flag as false positive" on the diagnostics page (1D.5, Q2).
+      const req = parseFlagFalsePositive(msg);
+      if (req) void flagFalsePositive(diagnostics, req);
+    } else if (type === 'SetRecordLandmarks') {
+      // Diagnostics record-landmarks toggle (1D.5, Q3=C). Validate the config with
+      // its protocol schema, persist it, and relay the arm/disarm to the offscreen
+      // document (which owns the landmark buffer; offscreen may not touch storage).
+      const parsed = DiagnosticsConfigSchema.safeParse((msg as { config?: unknown }).config);
+      if (!parsed.success) return;
+      void (async () => {
+        await browser.storage.session.set({ [DIAGNOSTICS_CONFIG_KEY]: parsed.data });
+        // No offscreen listener yet (pump not started) simply means nothing to
+        // arm; the relay is best-effort and must not reject the handler.
+        await browser.runtime
+          .sendMessage({ type: 'SetRecordLandmarks', config: parsed.data })
+          .catch(() => {});
+      })();
     } else if (type === 'RunCameraPrecheck') {
       // Re-run the gate on demand (grant e2e / after the grant page reports).
       // If granted, recreate the offscreen so its getUserMedia runs under the
