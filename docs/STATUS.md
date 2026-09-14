@@ -18,6 +18,6 @@ _Project section last updated: 2026-09-12 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| **1D.5** | drv-1D.5 | Plan DONE (spec/impl/plan/exit-checks/SDD workspace); owner gate resolved (Q1=A/Q2=A/Q3=C); ready for execute (Task 1 protocol) | docs/plans/1D.5-diagnostics.md | 2026-09-14 |
+| **1D.5** | drv-1D.5 | Execute s1 done Tasks 1–2: protocol diagnostics shapes (I1/I2 green) + offscreen per-stage timings/dropped frames; next Tasks 3–7 (offscreen landmark buffer, SW, gesture-core replay→I3, page, e2e→E1/E2) | docs/plans/1D.5-diagnostics.md | 2026-09-14 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
