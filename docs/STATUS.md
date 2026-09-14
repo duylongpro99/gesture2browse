@@ -18,6 +18,6 @@ _Project section last updated: 2026-09-12 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| **1D.1** | drv-1D.1 | **Execute (s1): CONTINUE.** Tasks 1–2 done: protocol `Profile`/`Settings`/`OnboardingState`/`OnboardingComplete` (additive, zod-only) → **I1+I2 contract tests green**; pure `steps.ts` (15 unit tests). `tsc`/lint clean; `exit-check --fast` 2 PASS 1 FAIL (E2 = Task 5 e2e) 1 OWNER (E1). Next: Task 3 (page + rule) + Task 4 (background), then Task 5 (e2e → E2). | docs/plans/1D.1-onboarding.md | 2026-09-14 |
+| **1D.1** | drv-1D.1 | **Execute (s2): CONTINUE.** Tasks 1–2 verified green + ledger reconciled (s1 aborted at journal step): protocol `Profile`/`Settings`/`OnboardingState`/`OnboardingComplete` @d62b1a1, pure `steps.ts` @61516b1 (27 unit tests). `tsc`/lint clean; `exit-check --fast` 2 PASS (I1,I2) 1 FAIL (E2 = Task 5 e2e) 1 OWNER (E1). Next: Task 3 (page + rule) + Task 4 (background), then Task 5 (e2e → E2). | docs/plans/1D.1-onboarding.md | 2026-09-14 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
