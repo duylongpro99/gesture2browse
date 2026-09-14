@@ -1,4 +1,4 @@
-import { type Intent, type PageCommand, PageCommandSchema } from '@gesture/protocol';
+import { type Intent, type PageCommand, PageCommandSchema, type Profile } from '@gesture/protocol';
 import type { Actions } from './actions';
 import type { Bbox, Cdp } from './cdp';
 
@@ -11,7 +11,11 @@ export interface CommandTarget {
   postMessage(command: PageCommand): void;
 }
 
-export type Profile = 'standard' | 'accessibility';
+// Profile is the protocol enum (1D.1 promoted the informal union to a shared shape);
+// re-exported here so existing background.ts consumers keep their import path. Only
+// `standard`/`accessibility` have distinct dispatch behavior today; `presenter`
+// falls through as `standard` (its behavior is deferred to 1D.3).
+export type { Profile };
 
 export interface DispatchCtx {
   /** Active content port (fallback dispatch + pointer/hover plane). */
