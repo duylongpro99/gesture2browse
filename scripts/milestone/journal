@@ -162,7 +162,7 @@ base_sha=$(git merge-base "$base_branch" HEAD 2>/dev/null || git merge-base "ori
 head_sha=$(git rev-parse --short HEAD)
 esc=$(printf '%s' "$m" | sed 's/\./\\./g')
 title=$(grep -E "^###[[:space:]]+[0-9.]+[[:space:]]+Milestone[[:space:]]+$esc([^A-Za-z0-9.]|$)" docs/05-roadmap.md 2>/dev/null | head -1 \
-  | sed -E 's/^###[[:space:]]+[0-9.]+[[:space:]]+Milestone[[:space:]]+[^[:space:]]+[[:space:]]*(—|–|-)?[[:space:]]*//')
+  | sed -E 's/^###[[:space:]]+[0-9.]+[[:space:]]+Milestone[[:space:]]+[^[:space:]]+[[:space:]]*(—|–|-)?[[:space:]]*//' || true)
 [ -n "$title" ] || title=$slug
 section=$(ms_roadmap_section "$m" docs/05-roadmap.md 2>/dev/null || true)
 old=""; [ -f "$journal" ] && old=$journal
