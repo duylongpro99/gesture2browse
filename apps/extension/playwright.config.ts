@@ -34,5 +34,8 @@ export default defineConfig({
     { name: 'fitts', testMatch: '**/fitts.e2e.ts' },
     { name: 'dispatch-count', testMatch: '**/dispatch-count.e2e.ts' },
     { name: 'sw-recovery', testMatch: '**/sw-recovery.e2e.ts' },
+    // 1D.5 diagnostics page e2e (Task 7): exit checks E1 (owner screenshot) + E2
+    // (settings round-trip through chrome.storage validated by the protocol schema).
+    { name: 'diagnostics', testMatch: '**/diagnostics.e2e.ts' },
   ],
 });
