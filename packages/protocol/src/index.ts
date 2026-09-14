@@ -11,4 +11,5 @@ export * from './page-command.js';
 export * from './page-event.js';
 export * from './ports.js';
 export * from './pump.js';
+export * from './settings.js';
 export * from './transition.js';
