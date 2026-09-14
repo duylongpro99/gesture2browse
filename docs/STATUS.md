@@ -18,6 +18,6 @@ _Project section last updated: 2026-09-12 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| **1D.5** | drv-1D.5 | Execute s4 done Task 7 (last task): `diagnostics.e2e.ts` → E2 PASS; I1/I2/I3 PASS; E1 screenshot captured, owner-steps block in journal. All 7 tasks DONE; NEEDS-OWNER on E1 (owner reviews `apps/extension/test-results/diagnostics.png`). | docs/plans/1D.5-diagnostics.md | 2026-09-14 |
+| **1D.5** | drv-1D.5 | **Finish (s5): DONE.** §5 green (tsc/lint/boundary/unit); `exit-check 1D.5` = 4 PASS 0 FAIL, lock OK; E1 owner-approved (screenshot review). PR to `master` open. Awaiting owner: log §8 row + remove this row (`scripts/milestone/log-decision 1D.5 --apply`). | docs/plans/1D.5-diagnostics.md | 2026-09-14 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
