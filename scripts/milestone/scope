@@ -87,14 +87,18 @@ component_glob() {
 }
 
 # Print the backticked paths of the **Files:** block(s) in the text on stdin,
-# keeping only write labels and stripping `:12-34` line ranges.
+# stripping `:12-34` line ranges. Every backticked token inside the block is
+# emitted, on label lines AND their wrapped continuation lines, so a path on a
+# continuation (e.g. a rule file after several component paths) is not dropped;
+# non-path tokens that slip through are harmless (component_glob keeps them exact
+# and they match no file under guard-scope).
 files_of() {
   awk '
     /^```/ { fence = !fence; next }
     fence { next }
     /^\*\*Files:?\*\*/ { inblock = 1; next }
     inblock && /^[[:space:]]*$/ { inblock = 0; next }
-    inblock && /^[[:space:]]*[-*][[:space:]]+(Create|Modify|Test|Delete|Move|Rename|Add|Edit|Write)[^`]*`/ {
+    inblock && /`/ {
       line = $0
       while (match(line, /`[^`]+`/)) {
         p = substr(line, RSTART + 1, RLENGTH - 2)
@@ -138,14 +142,23 @@ case "$role" in
     if [ ! -f "$impl" ]; then
       warnings+=("no implementation plan at $impl; execute has no code scope (plan role first)")
     else
-      ledger=""
-      for l in "docs/sdd/$slug/progress.md" "docs/sdd/$m/progress.md"; do [ -f "$l" ] && { ledger=$l; break; }; done
+      ledgers=""
+      for l in "docs/sdd/$slug/progress.md" "docs/sdd/$m/progress.md"; do [ -f "$l" ] && ledgers="$ledgers $l"; done
       done_tasks=""
-      [ -n "$ledger" ] && done_tasks=$(awk -F'|' '
+      # A task is done when any cell of its ledger row is exactly done/complete
+      # (case-insensitive), in EITHER the slug- or milestone-named ledger dir, and
+      # independent of the ledger's column order. Both are read and unioned because
+      # the driver pipeline (brief/status/journal) writes docs/sdd/<m>/ while
+      # sdd-workspace seeds docs/sdd/<slug>/ — either may carry the live states.
+      # shellcheck disable=SC2086
+      [ -n "$ledgers" ] && done_tasks=$(awk -F'|' '
         /^[[:space:]]*\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
-          n=$2; s=$5; gsub(/[[:space:]]/,"",n); gsub(/^[[:space:]]+|[[:space:]]+$/,"",s)
-          if (s ~ /done|complete/) print n
-        }' "$ledger" | sort -un | tr '\n' ' ' || true)
+          n=$2; gsub(/[[:space:]]/,"",n)
+          for (i=3; i<=NF; i++) {
+            s=$i; gsub(/^[[:space:]]+|[[:space:]]+$/,"",s)
+            if (tolower(s) ~ /^(done|complete|completed)$/) { print n; break }
+          }
+        }' $ledgers | sort -un | tr '\n' ' ' || true)
       all_tasks=$(awk '/^```/ { f = !f } !f && /^#+[ \t]+Task[ \t]+[0-9]+/ { match($0, /Task[ \t]+[0-9]+/); t = substr($0, RSTART, RLENGTH); sub(/Task[ \t]+/, "", t); print t }' "$impl" | sort -un)
       picked=()
       for t in $all_tasks; do
