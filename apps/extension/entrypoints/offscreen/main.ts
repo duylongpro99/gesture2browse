@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
 
 import type { GestureFrame, PumpStat } from '@gesture/protocol';
-import { PortName } from '@gesture/protocol';
+import { PortName, DiagnosticsConfigSchema } from '@gesture/protocol';
 import { browser } from 'wxt/browser';
-import type { StartPump, WorkerMsg } from './inference.worker';
+import type { RecordMsg, StartPump, WorkerMsg } from './inference.worker';
 import InferenceWorker from './inference.worker?worker';
 import {
   DEFAULT_RESTART_PARAMS,
@@ -103,6 +103,12 @@ interface PumpHandle {
 }
 let current: PumpHandle | null = null;
 
+// 1D.5 record-landmarks arm state, held here (not in the worker) so it survives a
+// pump restart: startPump re-arms the freshly created worker below, and the SW
+// relay updates it live. Default OFF (Q3=C). Not persisted here — the SW owns
+// chrome.storage (offscreen.md).
+let recordLandmarks = false;
+
 // Restart-storm guard state (Task 6): shared across the lifetime of the
 // document so a camera that keeps ending immediately does not spin-loop
 // getUserMedia. Lifecycle concern, not gesture timing (CLAUDE.md §2).
@@ -171,6 +177,9 @@ async function startPump(): Promise<void> {
     preferredDelegate: 'webgl',
   };
   worker.postMessage(start, [readable]);
+  // Carry the current record-landmarks arm state onto the fresh worker (the
+  // module-scoped buffer in a new worker starts disarmed).
+  if (recordLandmarks) worker.postMessage({ type: 'record', on: true } satisfies RecordMsg);
 }
 
 // Tears down a dead pump generation: stop listening for `ended` (no
@@ -240,6 +249,19 @@ function scheduleRetry(): void {
 
 void startPump().catch((err) => {
   void browser.runtime.sendMessage({ type: 'PumpError', error: String(err) });
+});
+
+// SW -> offscreen relay of the record-landmarks toggle (1D.5). The SW owns the
+// DiagnosticsConfig and persists it; here we only forward the arm/disarm to the
+// worker's landmark buffer. Validate the config with its protocol schema before
+// acting (page-is-hostile applies even to our own SW's message).
+browser.runtime.onMessage.addListener((message: unknown) => {
+  const m = message as { type?: unknown; config?: unknown } | undefined;
+  if (m?.type !== 'SetRecordLandmarks') return;
+  const parsed = DiagnosticsConfigSchema.safeParse(m.config);
+  if (!parsed.success) return;
+  recordLandmarks = parsed.data.recordLandmarks;
+  current?.worker.postMessage({ type: 'record', on: recordLandmarks } satisfies RecordMsg);
 });
 
 // Test-only hook: lets a Playwright test (Task 6) drive a deterministic gesture

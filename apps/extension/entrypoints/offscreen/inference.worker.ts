@@ -5,6 +5,7 @@ import { classifierFromWeights } from './classifier-select';
 import { FpsLogger } from './fps-logger';
 import { createGestureFrameSource, type DeriveTimings } from './gesture-frame';
 import { StageTimer } from './stage-timer';
+import { LandmarkBuffer } from './landmark-buffer';
 import { shouldInfer, DEFAULT_FPS_POLICY_PARAMS, type FpsPolicyState } from './fps-policy';
 
 // G1 inference worker. It consumes the transferred ReadableStream<VideoFrame>,
@@ -26,6 +27,20 @@ export interface StartPump {
   preferredDelegate: Delegate;
 }
 
+/**
+ * Offscreen document -> worker: arm/disarm the rolling landmark buffer (1D.5
+ * record-landmarks, relayed from the SW via main.ts). While armed the worker
+ * attaches `landmarks` to each emitted GestureFrame (the recording exception in
+ * .claude/rules/offscreen.md); disarmed, no landmarks cross the Port.
+ */
+export interface RecordMsg {
+  type: 'record';
+  on: boolean;
+}
+
+/** Everything main.ts can post to the worker. */
+export type WorkerInMsg = StartPump | RecordMsg;
+
 /** Worker -> offscreen document (intra-document; not the protocol boundary). */
 export type WorkerMsg =
   | { type: 'ready'; delegate: Delegate }
@@ -46,15 +61,25 @@ export type WorkerMsg =
 // Minimal worker-scope shape (avoids pulling the webworker lib program-wide,
 // which would collide with the MediaStreamTrackProcessor declaration in main.ts).
 interface WorkerScope {
-  onmessage: ((ev: MessageEvent<StartPump>) => void) | null;
+  onmessage: ((ev: MessageEvent<WorkerInMsg>) => void) | null;
   postMessage(msg: WorkerMsg): void;
   addEventListener(type: string, listener: (ev: Event) => void): void;
 }
 const ctx = self as unknown as WorkerScope;
 
-ctx.onmessage = (ev: MessageEvent<StartPump>) => {
-  if (ev.data?.type !== 'start') return;
-  void run(ev.data).catch((err) => ctx.postMessage({ type: 'error', error: String(err) } satisfies WorkerMsg));
+// Rolling raw-landmark buffer, module-scoped so the `record` arm/disarm message
+// (processed by the event loop between the read loop's awaits) and the running
+// pump share one instance. Default OFF (Q3=C).
+const landmarkBuffer = new LandmarkBuffer();
+
+ctx.onmessage = (ev: MessageEvent<WorkerInMsg>) => {
+  const data = ev.data;
+  if (data?.type === 'record') {
+    landmarkBuffer.arm(data.on);
+    return;
+  }
+  if (data?.type !== 'start') return;
+  void run(data).catch((err) => ctx.postMessage({ type: 'error', error: String(err) } satisfies WorkerMsg));
 };
 
 // Fetches and validates the trained MLP weights from the extension-origin URL
@@ -194,7 +219,16 @@ async function run(msg: StartPump): Promise<void> {
       reportFrameCostMs(delegate, inferMs);
 
       const derive: DeriveTimings = { normalizeMs: 0, classifyMs: 0, filterMs: 0 };
-      ctx.postMessage({ type: 'frame', frame: gestureFrames.next(flatLandmarks, now, derive) } satisfies WorkerMsg);
+      const frame = gestureFrames.next(flatLandmarks, now, derive);
+      // Recording-armed: retain this frame's raw landmarks in the bounded ring
+      // and attach them to the emitted GestureFrame so the SW can build the
+      // full-pipeline replay window (Task 4). Disarmed, `landmarks` stays absent
+      // and no landmarks cross the Port (offscreen.md steady-state rule).
+      if (landmarkBuffer.isArmed && flatLandmarks) {
+        landmarkBuffer.record(flatLandmarks);
+        frame.landmarks = landmarkBuffer.latest();
+      }
+      ctx.postMessage({ type: 'frame', frame } satisfies WorkerMsg);
       log.mark(now);
       stageTimer.record(now, { captureMs, inferMs, ...derive });
     } else {
