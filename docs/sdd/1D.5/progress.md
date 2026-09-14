@@ -10,4 +10,4 @@ Tasks from `docs/plans/1D.5-diagnostics.impl.md`. One row per task.
 | 4 | Service worker: feature window, FP builder, record relay | DONE | exec s2 | pure `DiagnosticsRecorder` (FrameSample + FixtureFrame windows, `buildFalsePositive`); SW persists bounded FP series + `DiagnosticsConfig`, relays record arm/disarm; commit `2341f65` |
 | 5 | gesture-core: DiagnosticsExport → replay conversion | DONE | exec s3 | pure `framesFromDiagnostics`/`fixtureFromDiagnostics`; I3 contract PASS; commit `34c18ed` |
 | 6 | Diagnostics page (new entrypoint) + rule file | DONE | exec s3 | WXT-discovered React page (`diagnostics.html`); pure `view.ts`/`export.ts`; `.claude/rules/diagnostics.md`; commit `a8d0302` |
-| 7 | e2e: render, annotate, export, screenshot | TODO | — | E1 (owner screenshot) + E2 |
+| 7 | e2e: render, annotate, export, screenshot | DONE | exec s4 | `diagnostics.e2e.ts` (+ playwright project); E2 PASS; E1 screenshot at `apps/extension/test-results/diagnostics.png` (owner review pending); commit `pending` |
