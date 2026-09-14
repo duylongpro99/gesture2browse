@@ -18,6 +18,6 @@ _Project section last updated: 2026-09-12 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| **1D.5** | drv-1D.5 | Execute s3 done Tasks 5–6: gesture-core export→replay (I3 green) + WXT diagnostics React page & `.claude/rules/diagnostics.md`; I1/I2/I3 PASS. Next Task 7 (diagnostics.e2e.ts → E2 + E1 owner screenshot) | docs/plans/1D.5-diagnostics.md | 2026-09-14 |
+| **1D.5** | drv-1D.5 | Execute s4 done Task 7 (last task): `diagnostics.e2e.ts` → E2 PASS; I1/I2/I3 PASS; E1 screenshot captured, owner-steps block in journal. All 7 tasks DONE; NEEDS-OWNER on E1 (owner reviews `apps/extension/test-results/diagnostics.png`). | docs/plans/1D.5-diagnostics.md | 2026-09-14 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
