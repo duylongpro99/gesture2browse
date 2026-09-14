@@ -33,10 +33,28 @@ function point(l: number[], i: number): [number, number] {
   return [l[b] ?? 0, l[b + 1] ?? 0];
 }
 
+/**
+ * Per-frame timings of the three derivation sub-stages, filled in place when an
+ * out-param is passed to `next` (diagnostics stage-timing, milestone 1D.5;
+ * measurement only, not gesture-timing logic). `filterMs` = 1€ smoothing of the
+ * landmarks and pointer; `normalizeMs` = normalize + feature derivation;
+ * `classifyMs` = the classifier. Kept here (not in the worker) so the numbers are
+ * an honest split of what this module actually does.
+ */
+export interface DeriveTimings {
+  normalizeMs: number;
+  classifyMs: number;
+  filterMs: number;
+}
+
 /** Source of GestureFrames for one tracked hand; holds cross-frame filter/velocity state. */
 export interface GestureFrameSource {
-  /** `landmarks` is the flat [x,y,z]*21 array for the one hand, or null when no hand is present. */
-  next(landmarks: number[] | null, ts: number): GestureFrame;
+  /**
+   * `landmarks` is the flat [x,y,z]*21 array for the one hand, or null when no
+   * hand is present. When `timings` is passed it is filled with the per-stage
+   * `performance.now()` deltas for this frame.
+   */
+  next(landmarks: number[] | null, ts: number, timings?: DeriveTimings): GestureFrame;
 }
 
 export function createGestureFrameSource(classifier: Classifier = new KnnClassifier()): GestureFrameSource {
@@ -48,8 +66,13 @@ export function createGestureFrameSource(classifier: Classifier = new KnnClassif
   let prevTs: number | null = null;
 
   return {
-    next(landmarks: number[] | null, ts: number): GestureFrame {
+    next(landmarks: number[] | null, ts: number, timings?: DeriveTimings): GestureFrame {
       if (!landmarks) {
+        if (timings) {
+          timings.filterMs = 0;
+          timings.normalizeMs = 0;
+          timings.classifyMs = 0;
+        }
         const frame: GestureFrame = {
           ts,
           present: false,
@@ -68,6 +91,7 @@ export function createGestureFrameSource(classifier: Classifier = new KnnClassif
       // Per-point 1€ smoothing on the wrist/thumb-tip/index-tip/middle-MCP
       // landmarks before anything else derives from them (normalize, features,
       // classify, palmFacing all read the filtered landmarks).
+      const filterStart = performance.now();
       const filtered = landmarkFilter.next(landmarks, ts);
 
       // Pointer = index-tip (landmark 8), in MediaPipe's normalized image space
@@ -76,16 +100,28 @@ export function createGestureFrameSource(classifier: Classifier = new KnnClassif
       const [rawX, rawY] = point(filtered, INDEX_TIP);
       const x = filterX.filter(rawX, ts);
       const y = filterY.filter(rawY, ts);
+      const filterMs = performance.now() - filterStart;
 
       const dtMs = prevTs !== null ? Math.max(ts - prevTs, 1) : null;
       const vx = dtMs !== null ? (x - prevPointer.x) / (dtMs / 1000) : 0;
       const vy = dtMs !== null ? (y - prevPointer.y) / (dtMs / 1000) : 0;
 
+      const normalizeStart = performance.now();
       const normalized = normalizeLandmarks(filtered);
       const pinch = pinchDistance(normalized);
       const fingers = fingerExtension(normalized);
-      const { label, score } = classifier.classify(normalized);
       const facing = palmFacing(filtered);
+      const normalizeMs = performance.now() - normalizeStart;
+
+      const classifyStart = performance.now();
+      const { label, score } = classifier.classify(normalized);
+      const classifyMs = performance.now() - classifyStart;
+
+      if (timings) {
+        timings.filterMs = filterMs;
+        timings.normalizeMs = normalizeMs;
+        timings.classifyMs = classifyMs;
+      }
 
       // Hand-span (wrist -> middle-MCP) in raw image space, used as the bbox scale.
       const [wx, wy] = point(filtered, WRIST);
