@@ -7,6 +7,7 @@ export { palmFacing } from './palm-facing.js';
 export { createLandmarkFilter, type LandmarkFilter } from './landmark-filter.js';
 export { createGestureMachine, type FrameInput } from './machine.js';
 export { replayFixture, replayFixtureWith, replayFrames, createGestureRunner, type GestureRunner } from './replay.js';
+export { framesFromDiagnostics, fixtureFromDiagnostics } from './diagnostics-replay.js';
 export {
   PALM_CLUTCH_MS,
   SCROLL_STEP,
