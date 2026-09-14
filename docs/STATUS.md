@@ -19,6 +19,6 @@ _Project section last updated: 2026-09-12 (owner)_
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
 | **1D.5** | drv-1D.5 | **Finish (s5): DONE.** §5 green (tsc/lint/boundary/unit); `exit-check 1D.5` = 4 PASS 0 FAIL, lock OK; E1 owner-approved (screenshot review). PR to `master` open. Awaiting owner: log §8 row + remove this row (`scripts/milestone/log-decision 1D.5 --apply`). | docs/plans/1D.5-diagnostics.md | 2026-09-14 |
-| **1D.1** | drv-1D.1 | **Plan (s0): DONE.** Spec + impl (5 tasks) + five-question form + Exit checks (E1 owner, E2 e2e, I1/I2 consumer:1D.2/1D.3) + 2 frozen contract tests (fail today) + sdd workspace. New full-tab `entrypoints/onboarding`; additive protocol `Profile`/`Settings`/`OnboardingState`. No owner gate needed (intent delegated HOW). Next: execute Task 1. | docs/plans/1D.1-onboarding.md | 2026-09-14 |
+| **1D.1** | drv-1D.1 | **Execute (s1): CONTINUE.** Tasks 1–2 done: protocol `Profile`/`Settings`/`OnboardingState`/`OnboardingComplete` (additive, zod-only) → **I1+I2 contract tests green**; pure `steps.ts` (15 unit tests). `tsc`/lint clean; `exit-check --fast` 2 PASS 1 FAIL (E2 = Task 5 e2e) 1 OWNER (E1). Next: Task 3 (page + rule) + Task 4 (background), then Task 5 (e2e → E2). | docs/plans/1D.1-onboarding.md | 2026-09-14 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
