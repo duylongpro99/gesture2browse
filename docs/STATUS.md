@@ -18,6 +18,6 @@ _Project section last updated: 2026-09-12 (owner)_
 
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
-| **1D.5** | unclaimed | Diagnostics screen; not started | docs/plans/1D.5-diagnostics.md | 2026-09-14 |
+| **1D.5** | drv-1D.5 | Diagnostics screen; not started | docs/plans/1D.5-diagnostics.md | 2026-09-14 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
