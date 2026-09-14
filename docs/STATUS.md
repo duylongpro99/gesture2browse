@@ -19,5 +19,6 @@ _Project section last updated: 2026-09-12 (owner)_
 | Milestone | Owner session | State (one sentence) | Plan | Updated |
 |---|---|---|---|---|
 | **1D.5** | drv-1D.5 | **Finish (s5): DONE.** §5 green (tsc/lint/boundary/unit); `exit-check 1D.5` = 4 PASS 0 FAIL, lock OK; E1 owner-approved (screenshot review). PR to `master` open. Awaiting owner: log §8 row + remove this row (`scripts/milestone/log-decision 1D.5 --apply`). | docs/plans/1D.5-diagnostics.md | 2026-09-14 |
+| **1D.1** | unclaimed | Not started. | docs/plans/1D.1-onboarding.md | 2026-09-14 |
 
 Claiming a row: put a short session name in "Owner session" before starting. A row already claimed means another session is on it; pick a different milestone or stop and ask. Remove the row when the milestone exits; log the exit in roadmap §8 (owner).
