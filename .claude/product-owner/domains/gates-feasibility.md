@@ -31,7 +31,9 @@ Eight gates converted feasibility risk into measurements. **The honest state: th
 - **G3 unmeasured** — mainstream-2020-laptop performance promise is unproven ([[constraint-performance]]).
 - These three, plus **participant recruiting** and **Web Store review** ([[roadmap-phases]]), are the real risks between today's state and a trustworthy M1.
 
-**Decided (roadmap §8):** delivery model; G1/G2/G5/G7 GO; provider "9router"/model "glm-5.2"; CDP trusted clicks default; 1A interfaces frozen; ADR 0001 (pointer via SW relay) accepted; G4/G6 accepted as MOCK to keep flow moving.
+**Decided (roadmap §8):** delivery model; G1/G2/G5/G7 GO; provider "9router"/model "glm-5.2"; CDP trusted clicks default; 1A interfaces frozen; ADR 0001 (pointer via SW relay) accepted; G4/G6 accepted as MOCK to keep flow moving; 1C page-plane interfaces fixed; 1D.1 onboarding interfaces fixed.
+
+**No gate readiness change through 2026-09-15.** The 1D.5 (diagnostics) and 1D.1 (onboarding) milestones both merged since discovery, but neither moved a G-number: G4/G6 remain MOCK, G3 remains unmeasured. These are UI/plumbing milestones — the accuracy/ergonomics/weak-laptop gaps are still the M1 risks and still wait on participant data. (STATUS board is now empty; merged-milestone rows removed per governance — absence is not a gate signal.)
 
 ## Open questions
 - Real G4 (gesture set + accuracy) and real G6 (ergonomics) — need participant data; would supersede the mocks.

@@ -1,28 +1,31 @@
 ---
 discovered: 2026-09-14
-updated: 2026-09-14
-base_commit: c8fcd72
+updated: 2026-09-15
+base_commit: cbb09ad
 last_checked: 2026-09-15
 head_at_check: cbb09ad
-status: stale
+status: fresh
 sources:
   - docs/01-prd.md
   - docs/02-architecture.md
   - docs/05-roadmap.md
   - docs/STATUS.md
   - docs/spike-results.md
+  - docs/plans/1D.1-onboarding.md
 ---
 
 ## Drift signals
 <!-- rewritten by every drift check; "none" when fresh -->
-- roadmap-phases: 1D.1 onboarding milestone completed & merged; roadmap+STATUS updated (commits c8fcd72..cbb09ad) — [suspected]
-- gates-feasibility: STATUS row churn across 1D.1 sessions may shift gate readiness (commits c8fcd72..cbb09ad) — [suspected]
-- (new-chunk candidate) first-run onboarding wizard shipped as a user-facing capability with no chunk (`[onboarding]`/`[protocol]` commits) — [suspected]
+- roadmap-phases: 1D.1 onboarding merged; roadmap+STATUS reconciled — [reconciled 2026-09-15]
+- gates-feasibility: STATUS churn reviewed — no gate moved by 1D.5/1D.1 — [reconciled 2026-09-15]
+- feature-onboarding: new chunk created for the shipped first-run wizard — [reconciled 2026-09-15]
+- PRD FR-30 vs shipped onboarding (tutorial + pinch calibration promised, not shipped) — [OPEN drift risk; owner reconciles PRD]
 
 ## Chunks
 - [[core-product]] — the problem, users, value, two-layer model, success metrics, non-goals (read for almost anything)
 - [[segment-personas]] — who it's for; Maya is the primary MVP user and the acceptance judge
 - [[feature-direct-control]] — the on-device gesture layer = the MVP (clutch, point+snap, click, scroll, nav, confirm)
+- [[feature-onboarding]] — first-run wizard (1D.1): consent→camera→site→profile→ready; activation; what first-run does NOT teach
 - [[feature-agent-assist]] — the Phase 2 LLM agent (suggestions, NL goals, gated execution, voice)
 - [[constraint-safety]] — agent proposes/human disposes; gesture-as-consent, kill switch, domain policy, injection
 - [[constraint-privacy]] — video never leaves the device; landmarks only; offline-capable

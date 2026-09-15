@@ -6,6 +6,7 @@ related:
   - gates-feasibility: sequenced by — milestones split because gate results land at different times
   - feature-direct-control: Phase 1 — the MVP milestones
   - feature-agent-assist: Phase 2 — the agent milestones
+  - feature-onboarding: contains — 1D.1, the first Phase-1 UI screen, now merged
 sources:
   - docs/05-roadmap.md
   - docs/STATUS.md
@@ -24,7 +25,9 @@ sources:
 - 1D.1–1D.6 = one UI screen each: **1D.5 diagnostics built first** (feeds tuning), then 1D.1 onboarding, 1D.2 calibration, 1D.3 settings, 1D.4 HUD, 1D.6 cheat-sheet + store listing.
 - 1E hardening, perf CI, study-fix intake → store submission.
 
-**Current state (STATUS.md, 2026-09-14):** Phase 0 fully merged. Phase 1: 1A + 1B merged; 1C is **next and READY**. 1D.5 diagnostics finished (PR open, owner-approved). Blockers: 1D.1–1D.6 need owner per-screen intent; 1E needs owner y4m gesture recordings + Phase-0 bench numbers.
+**Current state (STATUS.md, 2026-09-15):** Phase 0 fully merged. Phase 1: 1A + 1B merged; 1C interfaces fixed & consumed by 1D; **1D.5 diagnostics merged** (PR #10) and **1D.1 onboarding merged** (PR #13). STATUS board is now **empty — no milestone claimed/active**; next 1D screen (1D.2 calibration / 1D.3 settings) awaits owner intent. Blockers unchanged: remaining 1D screens need owner per-screen intent; 1E needs owner y4m gesture recordings + Phase-0 bench numbers.
+
+**1D.1 scope note:** onboarding shipped as consent → camera-grant handoff → site access → profile pick → "you're ready" ([[feature-onboarding]]). The roadmap row's promised **60-second first-run tutorial was cut and deferred to 1D.6**; GPU warm-up and posture guidance dropped from the plan. PRD FR-30 not yet reconciled (drift risk — see [[feature-onboarding]]).
 
 **Sequencing risks & external waits (§1, §2.3, §9):**
 - **Participant recruiting is the critical path** (2–3 wk lead). < 5 confirmed by Sep 21 → run with 3, add 2 before public launch.

@@ -7,6 +7,7 @@ related:
   - gates-feasibility: gated by — G4 (accuracy) and G6 (ergonomics/feel) are MOCK, so quality is unproven
   - constraint-safety: uses — clutch/pause and kill switch live here
   - roadmap-phases: shipped in — Phase 1 (1A/1B/1C built; UI screens 1D in progress)
+  - feature-onboarding: entered via — onboarding sets the Profile that governs which gestures are active
 sources:
   - docs/01-prd.md
   - docs/02-architecture.md
@@ -17,7 +18,7 @@ The 100% on-device, no-network layer. This IS the MVP (M1). No agent, no voice.
 **Gesture vocabulary & user goals (PRD §6):**
 - **Clutch / pause** (open palm, hold ~1s) — arm or pause tracking; reachable from every state. Goal: trust and rest, prevents false fires. Also the kill switch ([[constraint-safety]]).
 - **Point + semantic snapping** (index finger) — cursor snaps to nearest interactable within a radius. Goal: accurate selection without fine motor precision. The core "coarse gesture → precise action" bet.
-- **Click** via **pinch** OR **dwell-hold** — dwell-to-click is a first-class MVP mode, default in the Accessibility profile ([[segment-personas]] Maya).
+- **Click** via **pinch** OR **dwell-hold** — dwell-to-click is a first-class MVP mode, default in the Accessibility profile ([[segment-personas]] Maya). As of 1D.1 the **Profile actually drives this** — before onboarding shipped, the product ran a hardcoded Standard profile and the setting had no effect; now the profile picked at first run ([[feature-onboarding]]) genuinely toggles dwell-click and the error-prone gestures.
 - **Scroll** (closed fist + move, inertia), **back/forward** (palm swipe L/R), **tab next/prev** (palm swipe up/down, off by default in a11y profile).
 - **Confirm / reject** — thumbs-up (confirm), thumbs-down (reject/undo/dismiss).
 - **Victory ✌️** — opens the agent panel (bridge to [[feature-agent-assist]]).

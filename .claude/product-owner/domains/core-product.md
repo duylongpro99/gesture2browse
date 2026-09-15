@@ -6,6 +6,7 @@ related:
   - segment-personas: serves — Maya is the primary user the bar is set by
   - feature-direct-control: delivers — the on-device value layer
   - feature-agent-assist: delivers — the Phase 2 value layer
+  - feature-onboarding: activates — the install→first-use path; leading indicator for the day-7 retention metric
   - gates-feasibility: gated by — readiness rests on unproven G4/G6
 sources:
   - docs/01-prd.md
