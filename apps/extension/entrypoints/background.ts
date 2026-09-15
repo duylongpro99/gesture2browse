@@ -7,6 +7,8 @@ import {
   PortName,
   TransitionLogEntrySchema,
   DiagnosticsConfigSchema,
+  OnboardingCompleteSchema,
+  DEFAULT_PROFILE,
   type PumpStat,
   type CameraPermissionState,
   type TransitionLogEntry,
@@ -22,6 +24,7 @@ import {
 } from './background/diagnostics';
 import { createFrameConsumer } from './background/fsm';
 import { type DispatchCtx, type Profile, dispatchIntent } from './background/dispatcher';
+import { profileFromSettings, shouldOpenOnboarding } from './background/onboarding-gate';
 import { type Bbox, type DebuggerApi, type PermissionsApi, createCdp } from './background/cdp';
 import { type TabsApi, createActions } from './background/actions';
 import { relayPointer } from './background/pointer';
@@ -50,6 +53,8 @@ const TRANSITION_SERIES_KEY = 'transitionSeries';
 const TRANSITION_LATEST_KEY = 'transitionLatest';
 const FALSE_POSITIVE_SERIES_KEY = 'falsePositiveSeries';
 const DIAGNOSTICS_CONFIG_KEY = 'diagnosticsConfig';
+const SETTINGS_KEY = 'settings'; // storage.sync — 1D.1 user preferences (profile)
+const ONBOARDING_KEY = 'onboardingState'; // storage.local — 1D.1 first-run completion
 
 // Diagnostic-only (arch §3.2 / 1D.5): appends the FSM's per-frame transition
 // entries to a bounded chrome.storage.session series, reusing the same
@@ -250,10 +255,22 @@ export default defineBackground(() => {
 
   // Page-side state the FSM/dispatcher read (1A is single-page: one hover, one
   // profile). `dwellEnabled` follows the profile; Standard has no dwell-click.
-  // Profile is a getter so 1D can swap in real switching without touching the
-  // wiring; Standard is the only 1C profile.
+  // 1D.1 (D4): the profile is now the user's choice, read from the non-secret
+  // `Settings` blob in storage.sync (Zod-validated via profileFromSettings, absent →
+  // DEFAULT_PROFILE = Accessibility) and refreshed on storage.onChanged. Background
+  // only *selects* the profile — every gesture-timing constant stays in gesture-core
+  // (CLAUDE.md §2).
   let lastHover: { id: number | null; bbox?: Bbox } = { id: null };
-  const profile = (): Profile => 'standard';
+  let currentProfile: Profile = DEFAULT_PROFILE;
+  const profile = (): Profile => currentProfile;
+  void browser.storage.sync.get([SETTINGS_KEY]).then((r) => {
+    currentProfile = profileFromSettings(r[SETTINGS_KEY]);
+  });
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    const change = (changes as Record<string, { newValue?: unknown }>)[SETTINGS_KEY];
+    if (change) currentProfile = profileFromSettings(change.newValue);
+  });
 
   const cx = chromeApi();
   const cdpImpl = createCdp({
@@ -308,6 +325,20 @@ export default defineBackground(() => {
     },
   });
 
+  // 1D.1 (D5): open the full-tab first-run wizard. Deduped within the SW lifetime so
+  // the onInstalled trigger and the startup gate never open two tabs at once.
+  let onboardingOpened = false;
+  const openOnboarding = async (): Promise<void> => {
+    if (onboardingOpened) return;
+    onboardingOpened = true;
+    await browser.tabs.create({ url: browser.runtime.getURL('/onboarding.html') });
+  };
+
+  // First-run trigger: open onboarding once, on fresh install.
+  browser.runtime.onInstalled.addListener((details: { reason?: string }) => {
+    if (details.reason === 'install') void openOnboarding();
+  });
+
   browser.runtime.onConnect.addListener((port: RegistryPort) => {
     if (port.name === PortName.OffscreenToServiceWorker) {
       ports.registerOffscreen(port);
@@ -358,6 +389,11 @@ export default defineBackground(() => {
           .sendMessage({ type: 'SetRecordLandmarks', config: parsed.data })
           .catch(() => {});
       })();
+    } else if (type === 'onboardingComplete') {
+      // 1D.1 (D5): the onboarding page finished (it already wrote OnboardingState +
+      // Settings). Validate the envelope, then run the existing grant gate → pump.
+      if (!OnboardingCompleteSchema.safeParse(msg).success) return;
+      void gateThenPump();
     } else if (type === 'RunCameraPrecheck') {
       // Re-run the gate on demand (grant e2e / after the grant page reports).
       // If granted, recreate the offscreen so its getUserMedia runs under the
@@ -401,5 +437,15 @@ export default defineBackground(() => {
     reinjector?.reinjectMissing(restored.contentTabs);
   });
 
-  void gateThenPump();
+  // 1D.1 (D5): while first-run onboarding is incomplete, route to the wizard instead
+  // of starting the pump; the pump starts when the page sends OnboardingComplete
+  // (handled above). Onboarding state is device-local and Zod-validated (hostile blob).
+  void (async () => {
+    const stored = (await browser.storage.local.get([ONBOARDING_KEY]))[ONBOARDING_KEY];
+    if (shouldOpenOnboarding(stored)) {
+      await openOnboarding();
+      return;
+    }
+    await gateThenPump();
+  })();
 });
